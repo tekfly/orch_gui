@@ -108,9 +108,9 @@ function Download-Files {
 }
 
 # Trigger download immediately when the window loads
-$window.Add_Loaded({
-    Download-Files
-})
+# $window.Add_Loaded({
+#     Download-Files
+# })
 
 # Re-download when clicking "UpdateFiles"
 $btnFiles.Add_Click({

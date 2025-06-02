@@ -1,9 +1,9 @@
 Add-Type -AssemblyName PresentationFramework
 
-# Define paths & URLs
+# Define paths & URLs (adjust these as needed)
 $downloadFolder = Join-Path $env:USERPROFILE "Downloads\UiPath_temp"
 $versionFile = Join-Path $downloadFolder "product_versions.json"
-$jsonUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
+$jsonUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"  # Your JSON URL
 
 # Ensure download folder exists
 if (-not (Test-Path $downloadFolder)) {
@@ -12,6 +12,7 @@ if (-not (Test-Path $downloadFolder)) {
 
 # Download JSON if not present
 if (-not (Test-Path $versionFile)) {
+    Write-Host "Downloading version info..."
     try {
         Invoke-WebRequest -Uri $jsonUrl -OutFile $versionFile -UseBasicParsing
     } catch {
@@ -28,17 +29,17 @@ try {
     exit
 }
 
-# Define products & actions
+# Define products & actions (only Download for this window)
 $products = @("Orchestrator", "Robot/Studio")
 $actionsByProduct = @{
     "Orchestrator"   = @("download")
     "Robot/Studio"   = @("download")
 }
 
-# UI XAML
+# XAML UI for Download window
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        Title="Download UiPath Components" Height="360" Width="420" WindowStartupLocation="CenterScreen">
+        Title="Download UiPath Components" Height="320" Width="400" WindowStartupLocation="CenterScreen">
     <Grid Margin="10">
         <StackPanel>
             <TextBlock Text="Select Product:" Margin="0,0,0,5"/>
@@ -52,16 +53,16 @@ $actionsByProduct = @{
 
             <ProgressBar Name="ProgressBar" Height="20" Margin="0,20,0,0" Minimum="0" Maximum="100" Visibility="Hidden"/>
 
-            <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
-                <Button Name="DownloadBtn" Content="Download" Width="100" Margin="0,0,10,0" IsEnabled="False"/>
-                <Button Name="CancelBtn" Content="Cancel" Width="100" IsEnabled="False"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,20,0,0">
+                <Button Name="DownloadBtn" Content="Download" Width="100" Height="30" IsEnabled="False" Margin="0,0,10,0"/>
+                <Button Name="CancelBtn" Content="Cancel" Width="100" Height="30" IsEnabled="False"/>
             </StackPanel>
         </StackPanel>
     </Grid>
 </Window>
 "@
 
-# Load UI
+# Load UI from XAML
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $window = [Windows.Markup.XamlReader]::Load($reader)
 
@@ -73,9 +74,10 @@ $downloadBtn = $window.FindName("DownloadBtn")
 $cancelBtn   = $window.FindName("CancelBtn")
 $progressBar = $window.FindName("ProgressBar")
 
-# Populate product dropdown
+# Populate Product dropdown
 $products | ForEach-Object { $productBox.Items.Add($_) }
 
+# On Product selection → populate Action dropdown (only download here)
 $productBox.Add_SelectionChanged({
     $selectedProduct = $productBox.SelectedItem
     if ($selectedProduct) {
@@ -85,9 +87,11 @@ $productBox.Add_SelectionChanged({
         $versionBox.Items.Clear()
         $versionBox.IsEnabled = $false
         $downloadBtn.IsEnabled = $false
+        $cancelBtn.IsEnabled = $false
     }
 })
 
+# On Action selection → populate Version dropdown
 $actionBox.Add_SelectionChanged({
     $selectedProduct = $productBox.SelectedItem
     $selectedAction = $actionBox.SelectedItem
@@ -103,98 +107,189 @@ $actionBox.Add_SelectionChanged({
                 ForEach-Object { $versionBox.Items.Add($_) }
             $versionBox.IsEnabled = $true
             $downloadBtn.IsEnabled = $false
+            $cancelBtn.IsEnabled = $false
         }
     }
 })
 
+# Enable Download button when version selected
 $versionBox.Add_SelectionChanged({
     if ($versionBox.SelectedItem) {
         $downloadBtn.IsEnabled = $true
+        $cancelBtn.IsEnabled = $false
     } else {
         $downloadBtn.IsEnabled = $false
+        $cancelBtn.IsEnabled = $false
     }
 })
 
-# Global state
-$global:webClient = $null
-$global:downloadFinished = $false
-$global:downloadError = $null
+# Cancellation token source for async download
+$cancellationTokenSource = $null
 
-function Download-FileWithProgress {
+# Async download function with HttpClient, progress, and cancellation support
+function Download-FileAsync {
     param(
         [string]$Url,
-        [string]$Destination
+        [string]$Destination,
+        [System.Threading.CancellationToken]$CancellationToken
     )
 
-    $progressBar.Visibility = 'Visible'
-    $progressBar.Value = 0
-    $cancelBtn.IsEnabled = $true
+    $httpClient = [System.Net.Http.HttpClient]::new()
 
-    $global:webClient = New-Object System.Net.WebClient
-    $global:downloadFinished = $false
-    $global:downloadError = $null
+    try {
+        $response = $httpClient.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead, $CancellationToken).GetAwaiter().GetResult()
+        $response.EnsureSuccessStatusCode()
 
-    Register-ObjectEvent -InputObject $global:webClient -EventName DownloadProgressChanged -Action {
-        $e = $EventArgs
-        $progressBar.Dispatcher.Invoke([action]{
-            $progressBar.Value = $e.ProgressPercentage
-        })
-    } | Out-Null
+        $totalBytes = $response.Content.Headers.ContentLength
+        $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
 
-    Register-ObjectEvent -InputObject $global:webClient -EventName DownloadFileCompleted -Action {
-        $e = $EventArgs
-        if ($e.Error) {
-            $global:downloadError = $e.Error.Message
+        $fileStream = [System.IO.File]::Create($Destination)
+        $buffer = New-Object byte[] 81920
+        $totalRead = 0
+
+        while (($read = $stream.ReadAsync($buffer, 0, $buffer.Length, $CancellationToken).GetAwaiter().GetResult()) -gt 0) {
+            $fileStream.Write($buffer, 0, $read)
+            $totalRead += $read
+
+            # Update progress bar on UI thread
+            $progressPercent = if ($totalBytes) { [math]::Round(($totalRead / $totalBytes) * 100) } else { 0 }
+            $progressBar.Dispatcher.Invoke([Action]{
+                $progressBar.Value = $progressPercent
+            })
         }
-        $global:downloadFinished = $true
-    } | Out-Null
-
-    $global:webClient.DownloadFileAsync($Url, $Destination)
-
-    while (-not $global:downloadFinished) {
-        Start-Sleep -Milliseconds 100
-        $window.Dispatcher.Invoke([Action]{}, "Background")
-    }
-
-    $progressBar.Visibility = 'Hidden'
-    $cancelBtn.IsEnabled = $false
-
-    if ($global:downloadError) {
-        throw $global:downloadError
+        $fileStream.Close()
+        $stream.Close()
+    } finally {
+        $httpClient.Dispose()
     }
 }
 
-# Download button click
+# Helper function to get file version if available
+function Get-FileVersion {
+    param([string]$Path)
+    try {
+        return (Get-Item $Path).VersionInfo.FileVersion
+    } catch {
+        return $null
+    }
+}
+
+# Helper function to ask user action on existing file
+function Ask-UserAction {
+    param([string]$message)
+
+    $result = [System.Windows.MessageBox]::Show(
+        $message + "`nDelete = Yes, Rename = No, Cancel = Cancel",
+        "File Exists",
+        [System.Windows.MessageBoxButton]::YesNoCancel,
+        [System.Windows.MessageBoxImage]::Question
+    )
+    return $result
+}
+
+# On Download button click
 $downloadBtn.Add_Click({
+    $downloadBtn.IsEnabled = $false
+    $cancelBtn.IsEnabled = $true
+
     $product = $productBox.SelectedItem
     $version = $versionBox.SelectedItem
     $url = $jsonData.$product.$version
 
     if (-not $url) {
-        [System.Windows.MessageBox]::Show("Download URL not found.", "Error", "OK", "Error")
+        [System.Windows.MessageBox]::Show("Download URL not found for selected product/version.", "Error", "OK", "Error")
+        $downloadBtn.IsEnabled = $true
+        $cancelBtn.IsEnabled = $false
         return
     }
 
     $fileName = Split-Path $url -Leaf
     $savePath = Join-Path $downloadFolder $fileName
 
-    try {
-        Download-FileWithProgress -Url $url -Destination $savePath
-        [System.Windows.MessageBox]::Show("Download completed.`nSaved to: $savePath", "Success", "OK", "Information")
-    } catch {
-        [System.Windows.MessageBox]::Show("Download failed:`n$($_.Exception.Message)", "Error", "OK", "Error")
+    $fileExists = Test-Path $savePath -PathType Leaf
+    $fileVersion = if ($fileExists) { Get-FileVersion $savePath } else { $null }
+    $comparisonVersion = $version
+
+    $proceedDownload = $true
+
+    if ($fileExists) {
+        # Basic version comparison logic
+        # Note: If MSI file version is empty, user is prompted
+        if ($fileVersion -eq $comparisonVersion) {
+            [System.Windows.MessageBox]::Show("File already exists with the same version. No need to download.", "Info", "OK", "Information")
+            $proceedDownload = $false
+        } elseif (-not $fileVersion) {
+            $userChoice = Ask-UserAction "Cannot validate the file version."
+            switch ($userChoice) {
+                'Yes' { Remove-Item $savePath -Force }
+                'No'  { Rename-Item $savePath "$savePath.old" }
+                default { $proceedDownload = $false }
+            }
+        } else {
+            $msg = ""
+            if ($fileVersion -gt $comparisonVersion) {
+                $msg = "A newer version exists locally."
+            } elseif ($fileVersion -lt $comparisonVersion) {
+                $msg = "An older version exists locally."
+            }
+            $userChoice = Ask-UserAction "$msg`nDo you want to delete, rename, or cancel?"
+            switch ($userChoice) {
+                'Yes' { Remove-Item $savePath -Force }
+                'No'  { Rename-Item $savePath "$savePath.old" }
+                default { $proceedDownload = $false }
+            }
+        }
     }
+
+    if (-not $proceedDownload) {
+        $downloadBtn.IsEnabled = $true
+        $cancelBtn.IsEnabled = $false
+        return
+    }
+
+    $cancellationTokenSource = [System.Threading.CancellationTokenSource]::new()
+
+    # Run the download task asynchronously so UI stays responsive
+    $task = [System.Threading.Tasks.Task]::Run([Action]{
+        try {
+            Download-FileAsync -Url $url -Destination $savePath -CancellationToken $cancellationTokenSource.Token
+            $window.Dispatcher.Invoke([Action]{
+                [System.Windows.MessageBox]::Show("Download completed.`nSaved to: $savePath", "Success", "OK", "Information")
+                $progressBar.Value = 0
+                $progressBar.Visibility = 'Hidden'
+                $downloadBtn.IsEnabled = $true
+                $cancelBtn.IsEnabled = $false
+            })
+        }
+        catch [System.OperationCanceledException] {
+            $window.Dispatcher.Invoke([Action]{
+                [System.Windows.MessageBox]::Show("Download canceled by user.", "Canceled", "OK", "Warning")
+                $progressBar.Value = 0
+                $progressBar.Visibility = 'Hidden'
+                $downloadBtn.IsEnabled = $true
+                $cancelBtn.IsEnabled = $false
+            })
+        }
+        catch {
+            $window.Dispatcher.Invoke([Action]{
+                [System.Windows.MessageBox]::Show("Download failed:`n$($_.Exception.Message)", "Error", "OK", "Error")
+                $progressBar.Value = 0
+                $progressBar.Visibility = 'Hidden'
+                $downloadBtn.IsEnabled = $true
+                $cancelBtn.IsEnabled = $false
+            })
+        }
+    })
+
+
+    $progressBar.Visibility = 'Visible'
 })
 
-# Cancel button click
+# On Cancel button click
 $cancelBtn.Add_Click({
-    if ($global:webClient -and $global:webClient.IsBusy) {
-        $global:webClient.CancelAsync()
-        $global:downloadError = "Download cancelled by user."
-        $global:downloadFinished = $true
-        $progressBar.Visibility = 'Hidden'
+    if ($cancellationTokenSource) {
+        $cancellationTokenSource.Cancel()
         $cancelBtn.IsEnabled = $false
-        [System.Windows.MessageBox]::Show("Download cancelled.", "Cancelled", "OK", "Warning")
     }
 })
 
