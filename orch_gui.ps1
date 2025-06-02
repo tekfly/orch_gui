@@ -12,26 +12,28 @@ $form.Size = New-Object System.Drawing.Size(400,300)
 $form.StartPosition = "CenterScreen"
 
 # Labels
-$lblAction = New-Object System.Windows.Forms.Label
-$lblAction.Text = "Select Action:"
-$lblAction.Location = New-Object System.Drawing.Point(20,20)
-$lblAction.Size = New-Object System.Drawing.Size(100,20)
-
 $lblProduct = New-Object System.Windows.Forms.Label
 $lblProduct.Text = "Select Product:"
-$lblProduct.Location = New-Object System.Drawing.Point(20,60)
+$lblProduct.Location = New-Object System.Drawing.Point(20,20)
 $lblProduct.Size = New-Object System.Drawing.Size(100,20)
 
-# Dropdowns
-$cmbAction = New-Object System.Windows.Forms.ComboBox
-$cmbAction.Location = New-Object System.Drawing.Point(130,20)
-$cmbAction.Size = New-Object System.Drawing.Size(200,20)
-$cmbAction.Items.AddRange(@("install", "download", "connect", "update"))
+$lblAction = New-Object System.Windows.Forms.Label
+$lblAction.Text = "Select Action:"
+$lblAction.Location = New-Object System.Drawing.Point(20,60)
+$lblAction.Size = New-Object System.Drawing.Size(100,20)
 
+# Product Dropdown
 $cmbProduct = New-Object System.Windows.Forms.ComboBox
-$cmbProduct.Location = New-Object System.Drawing.Point(130,60)
+$cmbProduct.Location = New-Object System.Drawing.Point(130,20)
 $cmbProduct.Size = New-Object System.Drawing.Size(200,20)
+$cmbProduct.DropDownStyle = 'DropDownList'
 $cmbProduct.Items.AddRange(@("robot", "studio", "orchestrator"))
+
+# Action Dropdown
+$cmbAction = New-Object System.Windows.Forms.ComboBox
+$cmbAction.Location = New-Object System.Drawing.Point(130,60)
+$cmbAction.Size = New-Object System.Drawing.Size(200,20)
+$cmbAction.DropDownStyle = 'DropDownList'
 
 # Checkbox for Chrome
 $chkChrome = New-Object System.Windows.Forms.CheckBox
@@ -39,12 +41,33 @@ $chkChrome.Text = "Include Google Chrome"
 $chkChrome.Location = New-Object System.Drawing.Point(20,100)
 $chkChrome.Size = New-Object System.Drawing.Size(200,20)
 
-# Button
+# Run Button
 $btnRun = New-Object System.Windows.Forms.Button
 $btnRun.Text = "Run Script"
 $btnRun.Location = New-Object System.Drawing.Point(130,140)
 $btnRun.Size = New-Object System.Drawing.Size(100,30)
 
+# When product is selected, update actions
+$cmbProduct.Add_SelectedIndexChanged({
+    $selectedProduct = $cmbProduct.SelectedItem
+    $cmbAction.Items.Clear()
+
+    switch ($selectedProduct) {
+        "robot" {
+            $cmbAction.Items.AddRange(@("install", "download", "connect", "update"))
+        }
+        "studio" {
+            $cmbAction.Items.AddRange(@("install", "download", "connect", "update"))
+        }
+        "orchestrator" {
+            $cmbAction.Items.AddRange(@("install", "download", "update")) # No "connect"
+        }
+    }
+
+    $cmbAction.SelectedIndex = 0
+})
+
+# Run button logic
 $btnRun.Add_Click({
     if (-not (CheckAdmin)) {
         [System.Windows.Forms.MessageBox]::Show("Please run PowerShell as Administrator.","Error","OK","Error")
@@ -55,12 +78,11 @@ $btnRun.Add_Click({
     $global:gproduct = $cmbProduct.SelectedItem
     $global:chrome = if ($chkChrome.Checked) { "yes" } else { "no" }
 
-    # Example execution logic
     Write-Host "Chosen Action: $global:gaction"
     Write-Host "Chosen Product: $global:gproduct"
     Write-Host "Include Chrome: $global:chrome"
 
-    # Call your real functions here
+    # === Replace below with your real logic ===
     if ($global:gaction -eq "install") {
         if ($global:chrome -eq "yes") {
             download_chrome
@@ -91,13 +113,15 @@ $btnRun.Add_Click({
             install_orchestrator
         }
     }
+
+    # Add similar handling for download/connect/update
 })
 
 # Add controls
-$form.Controls.Add($lblAction)
 $form.Controls.Add($lblProduct)
-$form.Controls.Add($cmbAction)
 $form.Controls.Add($cmbProduct)
+$form.Controls.Add($lblAction)
+$form.Controls.Add($cmbAction)
 $form.Controls.Add($chkChrome)
 $form.Controls.Add($btnRun)
 
