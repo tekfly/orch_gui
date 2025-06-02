@@ -117,66 +117,22 @@ function Install-Robot {
     }
 }
 
-function Install-Chrome {
-    param (
-        [string]$installerPath
-    )
-
-    $software = "Google Chrome"
-
-    # Check if Chrome is already installed
-    $chromeInstalled = Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe'
-
-    if ($chromeInstalled) {
-        Write-Host "$software is already installed." -ForegroundColor Green
-        [System.Windows.MessageBox]::Show("$software is already installed.", "Info", "OK", "Information")
-        return
-    }
-
-    Write-Host "$software is not installed. Starting installation..." -ForegroundColor Yellow
-    [System.Windows.MessageBox]::Show("Installing Google Chrome from:`n$installerPath", "Chrome Install", "OK", "Information")
-
-    try {
-        $chromeParams = "/silent /install"
-        $exitCode = (Start-Process -FilePath $installerPath -ArgumentList $chromeParams -Verb RunAs -Wait -PassThru).ExitCode
-
-        if ($exitCode -in 0, 1641, 3010) {
-            Write-Host "$software was installed successfully." -ForegroundColor Green
-            [System.Windows.MessageBox]::Show("Google Chrome was installed successfully.", "Success", "OK", "Information")
-        } else {
-            Write-Host "$software installation failed with exit code $exitCode." -ForegroundColor Red
-            [System.Windows.MessageBox]::Show("Google Chrome installation failed.`nExit code: $exitCode", "Error", "OK", "Error")
-        }
-    } catch {
-        Write-Host "Installation error: $($_.Exception.Message)" -ForegroundColor Red
-        [System.Windows.MessageBox]::Show("Error running installer:`n$($_.Exception.Message)", "Error", "OK", "Error")
-    }
-}
-
-
-
 # Install click handler
 $installBtn.Add_Click({
     foreach ($selected in $filesListBox.SelectedItems) {
         $fullPath = Join-Path $downloadFolder $selected
 
-        try {
-            if ($selected -match '^Studio-') {
-                $choice = Prompt-StudioOrRobot
-                if (-not $choice) {
-                    Write-Host "Skipped $selected (user canceled prompt)"
-                    continue
-                }
+        if ($selected -match '^Studio-') {
+            $choice = Prompt-StudioOrRobot
+            if (-not $choice) { continue }
 
-                if ($choice -eq "Studio") {
-                    Install-Studio -installerPath $fullPath
-                } elseif ($choice -eq "Robot") {
-                    Install-Robot -installerPath $fullPath
-                }
-            } elseif ($selected -match 'Chrome') {
-                    Install-chrome -installerPath $fullPath
-                } 
-            else {
+            if ($choice -eq "Studio") {
+                Install-Studio -installerPath $fullPath
+            } elseif ($choice -eq "Robot") {
+                Install-Robot -installerPath $fullPath
+            }
+        } else {
+            try {
                 [System.Windows.MessageBox]::Show("Installing:`n$selected", "Info", "OK", "Information")
                 $proc = Start-Process -FilePath $fullPath -Wait -PassThru
                 if ($proc.ExitCode -eq 0) {
@@ -184,9 +140,9 @@ $installBtn.Add_Click({
                 } else {
                     [System.Windows.MessageBox]::Show("Installer finished with error code $($proc.ExitCode) for:`n$selected", "Warning", "OK", "Warning")
                 }
+            } catch {
+                [System.Windows.MessageBox]::Show("Failed to start installer:`n$selected`n$($_.Exception.Message)", "Error", "OK", "Error")
             }
-        } catch {
-            [System.Windows.MessageBox]::Show("Failed to start installer:`n$selected`n$($_.Exception.Message)", "Error", "OK", "Error")
         }
     }
 })
