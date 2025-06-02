@@ -1,14 +1,14 @@
 {
   "Orchestrator": {
     "22.10": "https://raw.githubusercontent.com/UiPath/Infrastructure/master/Setup/InstallRolesAndFeatures.ps1",
-    "23.4": "https://download.uipath.com/versions/23.4.14/UiPathOrchestrator.msi",
-    "23.10": "https://download.uipath.com/versions/23.10.11/UiPathOrchestrator.msi",
-    "24.10": "https://download.uipath.com/versions/24.10.2/UiPathOrchestrator.msi"
+    "23.4.14": "https://download.uipath.com/versions/23.4.14/UiPathOrchestrator.msi",
+    "23.10.11": "https://download.uipath.com/versions/23.10.11/UiPathOrchestrator.msi",
+    "24.10.2": "https://download.uipath.com/versions/24.10.2/UiPathOrchestrator.msi"
   },
   "Robot/Studio": {
     "22.10": "https://raw.githubusercontent.com/UiPath/Infrastructure/master/Setup/InstallRolesAndFeatures.ps1",
-    "23.10": "https://download.uipath.com/versions/23.10.12/UiPathStudio.msi",
-    "24.10": "https://download.uipath.com/versions/24.10.10/UiPathStudio.msi"
+    "23.10.12": "https://download.uipath.com/versions/23.10.12/UiPathStudio.msi",
+    "24.10.10": "https://download.uipath.com/versions/24.10.10/UiPathStudio.msi"
   },
   "Chrome": {
     "Latest": "http://dl.google.com/chrome/install/chrome_installer.exe"

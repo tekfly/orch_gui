@@ -195,7 +195,12 @@ $downloadBtn.Add_Click({
     $product = $productBox.SelectedItem
     $version = $versionBox.SelectedItem
     $url = $jsonData.$product.$version
-    $savePath = Join-Path $downloadFolder "$product-$version.msi"
+    if ($product -eq "Robot/Studio") {
+        $savePath = Join-Path $downloadFolder "Studio-$version.msi"
+    }
+    else {
+        $savePath = Join-Path $downloadFolder "$product-$version.msi"
+    }
 
     try {
     Write-Host "Starting direct Invoke-WebRequest download..."
