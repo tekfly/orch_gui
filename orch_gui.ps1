@@ -12,7 +12,7 @@ if (-not (Test-Path $downloadFolder)) {
 }
 
 $versionFile = Join-Path $downloadFolder "product_versions.json"
-$remoteJsonUrl = "https://raw.githubusercontent.com/your-username/your-repo/main/product_versions.json"
+$remoteJsonUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
 
 function Update-VersionFile {
     try {
