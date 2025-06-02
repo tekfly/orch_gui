@@ -1,5 +1,38 @@
 Add-Type -AssemblyName PresentationFramework
 
+# Relaunch script as admin if not already
+function Ensure-Admin {
+    $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = "powershell.exe"
+        $psi.Arguments = "-ExecutionPolicy Bypass -File `"$PSCommandPath`""
+        $psi.Verb = "runas"
+        try {
+            [System.Diagnostics.Process]::Start($psi) | Out-Null
+        } catch {
+            [System.Windows.MessageBox]::Show("Admin permissions are required to run this script.", "Permission Denied", "OK", "Error")
+        }
+        exit
+    }
+}
+
+# Ensure admin rights
+Ensure-Admin
+
+# Set execution policy if needed
+$currentPolicy = Get-ExecutionPolicy -Scope LocalMachine
+if ($currentPolicy -ne "RemoteSigned") {
+    try {
+        Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned -Force
+    } catch {
+        [System.Windows.MessageBox]::Show("Failed to set execution policy: `n$($_.Exception.Message)", "Policy Error", "OK", "Error")
+    }
+}
+
+
+
 # Paths and URLs
 $global:downloadFolder = Join-Path $env:USERPROFILE "Downloads\UiPath_temp"
 $productVersionsUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
@@ -89,7 +122,7 @@ $btnFiles.Add_Click({
 # Placeholder buttons
 $btnDownload.Add_Click({ 
     #[System.Windows.MessageBox]::Show("Download clicked.") 
-    .\DownloadWindow.ps1
+    & "$($global:downloadFolder)\DownloadWindow.ps1"
 })
 $btnInstall.Add_Click({ [System.Windows.MessageBox]::Show("Install clicked.") })
 $btnConnect.Add_Click({ [System.Windows.MessageBox]::Show("Connect clicked.") })
