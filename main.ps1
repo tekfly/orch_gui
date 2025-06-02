@@ -37,6 +37,7 @@ Add-Type -AssemblyName PresentationFramework
 $global:downloadFolder = Join-Path $env:USERPROFILE "Downloads\UiPath_temp"
 $productVersionsUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
 $downloadWindowUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/DownloadWindow.ps1"
+$installWindowUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/DownloadWindow.ps1"
 
 # Ensure download folder exists
 if (-not (Test-Path $downloadFolder)) {
@@ -79,7 +80,8 @@ $btnUpdate    = $window.FindName("BtnUpdate")
 function Download-Files {
     $files = @(
         @{ Url = $productVersionsUrl; FileName = "product_versions.json" },
-        @{ Url = $downloadWindowUrl; FileName = "DownloadWindow.ps1" }
+        @{ Url = $downloadWindowUrl; FileName = "DownloadWindow.ps1" },
+        @{ Url = $installWindowUrl; FileName = "InstallWindow.ps1" }
     )
     $count = $files.Count
 
@@ -126,7 +128,7 @@ $btnDownload.Add_Click({
 })
 
 $btnInstall.Add_Click({ 
-    [System.Windows.MessageBox]::Show("Install clicked.") 
+    #[System.Windows.MessageBox]::Show("Install clicked.") 
     & "$($global:downloadFolder)\Installwindow.ps1"
 })
 
