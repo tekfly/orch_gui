@@ -1,18 +1,32 @@
 Add-Type -AssemblyName PresentationFramework
 
-# Create the main window XAML (simplified)
+# Paths and URLs
+$global:downloadFolder = Join-Path $env:USERPROFILE "Downloads\UiPath_temp"
+$productVersionsUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
+$downloadWindowUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/DownloadWindow.ps1"
+
+# Ensure download folder exists
+if (-not (Test-Path $downloadFolder)) {
+    New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null
+}
+
+# XAML UI with progress bar at top
 [xml]$xaml = @"
-<Window Title="UiPath Manager" Height="200" Width="300">
-    <StackPanel Margin="10">
-        <TextBlock Name="StatusText" Text="Starting downloads..." Margin="0,0,0,10"/>
-        <ProgressBar Name="ProgressBar" Height="20" Minimum="0" Maximum="100"/>
-        <StackPanel Orientation="Horizontal" Margin="0,20,0,0" HorizontalAlignment="Center" >
-            <Button Name="BtnDownload" Content="Download" Margin="5" IsEnabled="False" Width="60"/>
-            <Button Name="BtnInstall" Content="Install" Margin="5" IsEnabled="False" Width="60"/>
-            <Button Name="BtnConnect" Content="Connect" Margin="5" IsEnabled="False" Width="60"/>
-            <Button Name="BtnUpdate" Content="Update" Margin="5" IsEnabled="False" Width="60"/>
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        Title="UiPath Main Window" Height="250" Width="400" WindowStartupLocation="CenterScreen">
+    <Grid Margin="10">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="350" >
+            <ProgressBar Name="ProgressBar" Height="20" Minimum="0" Maximum="100" Margin="0,0,0,10"/>
+            <TextBlock Name="StatusText" Text="Ready." Margin="0,0,0,20" FontWeight="Bold" FontSize="14" TextAlignment="Center"/>
+
+            <WrapPanel HorizontalAlignment="Center" >
+                <Button Name="BtnDownload" Width="80" Margin="5" Content="Download"/>
+                <Button Name="BtnInstall" Width="80" Margin="5" Content="Install" IsEnabled="False"/>
+                <Button Name="BtnConnect" Width="80" Margin="5" Content="Connect" IsEnabled="False"/>
+                <Button Name="BtnUpdate" Width="80" Margin="5" Content="Update" IsEnabled="False"/>
+            </WrapPanel>
         </StackPanel>
-    </StackPanel>
+    </Grid>
 </Window>
 "@
 
@@ -20,6 +34,7 @@ Add-Type -AssemblyName PresentationFramework
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $window = [Windows.Markup.XamlReader]::Load($reader)
 
+# Find controls
 $statusText = $window.FindName("StatusText")
 $progressBar = $window.FindName("ProgressBar")
 $btnDownload = $window.FindName("BtnDownload")
@@ -27,44 +42,76 @@ $btnInstall = $window.FindName("BtnInstall")
 $btnConnect = $window.FindName("BtnConnect")
 $btnUpdate = $window.FindName("BtnUpdate")
 
-# Simulate download process (you’d replace with your actual download logic)
-Start-Job -ScriptBlock {
-    for ($i = 0; $i -le 100; $i += 10) {
-        Start-Sleep -Milliseconds 300
-        Write-Output $i
-    }
-} | ForEach-Object {
-    $progress = $_
-    $progressBar.Dispatcher.Invoke([action]{ $progressBar.Value = $progress })
-    $statusText.Dispatcher.Invoke([action]{ $statusText.Text = "Downloading... $progress%" })
+# Helper to update UI safely
+function Update-UI {
+    param([scriptblock]$action)
+    $window.Dispatcher.Invoke($action)
 }
 
-# Once done enable buttons
-$progressBar.Value = 100
-$statusText.Text = "Ready."
+# Function to download the two files with progress
+function Download-FilesAsync {
+    $filesToDownload = @(
+        @{ Url = $productVersionsUrl; FileName = "product_versions.json" },
+        @{ Url = $downloadWindowUrl; FileName = "DownloadWindow.ps1" }
+    )
+    $total = $filesToDownload.Count
 
-$btnDownload.IsEnabled = $true
-$btnInstall.IsEnabled = $true
-$btnConnect.IsEnabled = $true
-$btnUpdate.IsEnabled = $true
+    Update-UI {
+        $progressBar.Value = 0
+        $statusText.Text = "Starting downloads..."
+        $btnDownload.IsEnabled = $false
+        $btnInstall.IsEnabled = $false
+        $btnConnect.IsEnabled = $false
+        $btnUpdate.IsEnabled = $false
+    }
 
-# Button click handlers open other windows (pseudo code)
+    for ($i=0; $i -lt $total; $i++) {
+        $file = $filesToDownload[$i]
+        $savePath = Join-Path $downloadFolder $file.FileName
+
+        Update-UI { $statusText.Text = "Downloading $($file.FileName) ($($i+1)/$total)..." }
+
+        try {
+            Invoke-WebRequest -Uri $file.Url -OutFile $savePath -UseBasicParsing -ErrorAction Stop
+        } catch {
+            Update-UI { [System.Windows.MessageBox]::Show("Failed to download $($file.FileName):`n$($_.Exception.Message)", "Error", "OK", "Error") }
+        }
+
+        $percent = [int](($i+1)/$total*100)
+        Update-UI { $progressBar.Value = $percent }
+    }
+
+    Update-UI {
+        $statusText.Text = "Downloads complete."
+        $btnDownload.IsEnabled = $true
+        $btnInstall.IsEnabled = $true
+        $btnConnect.IsEnabled = $true
+        $btnUpdate.IsEnabled = $true
+        $progressBar.Value = 100
+        [System.Windows.MessageBox]::Show("Files downloaded to:`n$downloadFolder", "Download Complete", "OK", "Information")
+    }
+}
+
+# Download button click event
 $btnDownload.Add_Click({
-    # You could dot-source or call a script for DownloadWindow.ps1
-    & .\DownloadWindow.ps1
+    # Run download in background to keep UI responsive
+    $ps = [powershell]::Create()
+    $ps.AddScript(${function:Download-FilesAsync}) | Out-Null
+    $ps.BeginInvoke()
 })
 
+# Dummy handlers for other buttons
 $btnInstall.Add_Click({
-    & .\InstallWindow.ps1
+    [System.Windows.MessageBox]::Show("Install clicked - implement install logic.", "Info", "OK", "Information")
 })
 
 $btnConnect.Add_Click({
-    & .\ConnectWindow.ps1
+    [System.Windows.MessageBox]::Show("Connect clicked - implement connect logic.", "Info", "OK", "Information")
 })
 
 $btnUpdate.Add_Click({
-    & .\UpdateWindow.ps1
+    [System.Windows.MessageBox]::Show("Update clicked - implement update logic.", "Info", "OK", "Information")
 })
 
-# Show main window
+# Show the window
 $window.ShowDialog() | Out-Null
