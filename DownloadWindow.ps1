@@ -1,9 +1,9 @@
 Add-Type -AssemblyName PresentationFramework
 
-# Define paths & URLs (adjust these as needed)
+# Define paths & URLs
 $downloadFolder = Join-Path $env:USERPROFILE "Downloads\UiPath_temp"
 $versionFile = Join-Path $downloadFolder "product_versions.json"
-$jsonUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"  # Your JSON URL
+$jsonUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
 
 # Ensure download folder exists
 if (-not (Test-Path $downloadFolder)) {
@@ -12,7 +12,6 @@ if (-not (Test-Path $downloadFolder)) {
 
 # Download JSON if not present
 if (-not (Test-Path $versionFile)) {
-    Write-Host "Downloading version info..."
     try {
         Invoke-WebRequest -Uri $jsonUrl -OutFile $versionFile -UseBasicParsing
     } catch {
@@ -29,17 +28,17 @@ try {
     exit
 }
 
-# Define products & actions (only Download for this window)
+# Define products & actions
 $products = @("Orchestrator", "Robot/Studio")
 $actionsByProduct = @{
     "Orchestrator"   = @("download")
     "Robot/Studio"   = @("download")
 }
 
-# XAML UI for Download window
+# UI XAML
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        Title="Download UiPath Components" Height="320" Width="400" WindowStartupLocation="CenterScreen">
+        Title="Download UiPath Components" Height="360" Width="420" WindowStartupLocation="CenterScreen">
     <Grid Margin="10">
         <StackPanel>
             <TextBlock Text="Select Product:" Margin="0,0,0,5"/>
@@ -53,13 +52,16 @@ $actionsByProduct = @{
 
             <ProgressBar Name="ProgressBar" Height="20" Margin="0,20,0,0" Minimum="0" Maximum="100" Visibility="Hidden"/>
 
-            <Button Name="DownloadBtn" Content="Download" Height="30" Margin="0,20,0,0" IsEnabled="False"/>
+            <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+                <Button Name="DownloadBtn" Content="Download" Width="100" Margin="0,0,10,0" IsEnabled="False"/>
+                <Button Name="CancelBtn" Content="Cancel" Width="100" IsEnabled="False"/>
+            </StackPanel>
         </StackPanel>
     </Grid>
 </Window>
 "@
 
-# Load UI from XAML
+# Load UI
 $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $window = [Windows.Markup.XamlReader]::Load($reader)
 
@@ -68,12 +70,12 @@ $productBox  = $window.FindName("ProductBox")
 $actionBox   = $window.FindName("ActionBox")
 $versionBox  = $window.FindName("VersionBox")
 $downloadBtn = $window.FindName("DownloadBtn")
+$cancelBtn   = $window.FindName("CancelBtn")
 $progressBar = $window.FindName("ProgressBar")
 
-# Populate Product dropdown
+# Populate product dropdown
 $products | ForEach-Object { $productBox.Items.Add($_) }
 
-# On Product selection → populate Action dropdown (only download here)
 $productBox.Add_SelectionChanged({
     $selectedProduct = $productBox.SelectedItem
     if ($selectedProduct) {
@@ -86,7 +88,6 @@ $productBox.Add_SelectionChanged({
     }
 })
 
-# On Action selection → populate Version dropdown
 $actionBox.Add_SelectionChanged({
     $selectedProduct = $productBox.SelectedItem
     $selectedAction = $actionBox.SelectedItem
@@ -106,7 +107,6 @@ $actionBox.Add_SelectionChanged({
     }
 })
 
-# Enable Download button when version selected
 $versionBox.Add_SelectionChanged({
     if ($versionBox.SelectedItem) {
         $downloadBtn.IsEnabled = $true
@@ -115,7 +115,11 @@ $versionBox.Add_SelectionChanged({
     }
 })
 
-# Download function with progress bar update
+# Global state
+$global:webClient = $null
+$global:downloadFinished = $false
+$global:downloadError = $null
+
 function Download-FileWithProgress {
     param(
         [string]$Url,
@@ -124,51 +128,50 @@ function Download-FileWithProgress {
 
     $progressBar.Visibility = 'Visible'
     $progressBar.Value = 0
+    $cancelBtn.IsEnabled = $true
 
-    $webClient = New-Object System.Net.WebClient
+    $global:webClient = New-Object System.Net.WebClient
+    $global:downloadFinished = $false
+    $global:downloadError = $null
 
-    $webClient.DownloadProgressChanged += {
-        param($sender, $e)
+    Register-ObjectEvent -InputObject $global:webClient -EventName DownloadProgressChanged -Action {
+        $e = $EventArgs
         $progressBar.Dispatcher.Invoke([action]{
             $progressBar.Value = $e.ProgressPercentage
         })
-    }
+    } | Out-Null
 
-    $downloadFinished = $false
-    $downloadError = $null
-
-    $webClient.DownloadFileCompleted += {
-        param($sender, $e)
+    Register-ObjectEvent -InputObject $global:webClient -EventName DownloadFileCompleted -Action {
+        $e = $EventArgs
         if ($e.Error) {
-            $downloadError = $e.Error.Message
+            $global:downloadError = $e.Error.Message
         }
-        $downloadFinished = $true
-    }
+        $global:downloadFinished = $true
+    } | Out-Null
 
-    $uri = [Uri]$Url
-    $webClient.DownloadFileAsync($uri, $Destination)
+    $global:webClient.DownloadFileAsync($Url, $Destination)
 
-    # Wait until download completes
-    while (-not $downloadFinished) {
+    while (-not $global:downloadFinished) {
         Start-Sleep -Milliseconds 100
-        $window.Dispatcher.Invoke([Action]{},"Background")
+        $window.Dispatcher.Invoke([Action]{}, "Background")
     }
 
     $progressBar.Visibility = 'Hidden'
+    $cancelBtn.IsEnabled = $false
 
-    if ($downloadError) {
-        throw $downloadError
+    if ($global:downloadError) {
+        throw $global:downloadError
     }
 }
 
-# On Download button click
+# Download button click
 $downloadBtn.Add_Click({
     $product = $productBox.SelectedItem
     $version = $versionBox.SelectedItem
     $url = $jsonData.$product.$version
 
     if (-not $url) {
-        [System.Windows.MessageBox]::Show("Download URL not found for selected product/version.", "Error", "OK", "Error")
+        [System.Windows.MessageBox]::Show("Download URL not found.", "Error", "OK", "Error")
         return
     }
 
@@ -180,6 +183,18 @@ $downloadBtn.Add_Click({
         [System.Windows.MessageBox]::Show("Download completed.`nSaved to: $savePath", "Success", "OK", "Information")
     } catch {
         [System.Windows.MessageBox]::Show("Download failed:`n$($_.Exception.Message)", "Error", "OK", "Error")
+    }
+})
+
+# Cancel button click
+$cancelBtn.Add_Click({
+    if ($global:webClient -and $global:webClient.IsBusy) {
+        $global:webClient.CancelAsync()
+        $global:downloadError = "Download cancelled by user."
+        $global:downloadFinished = $true
+        $progressBar.Visibility = 'Hidden'
+        $cancelBtn.IsEnabled = $false
+        [System.Windows.MessageBox]::Show("Download cancelled.", "Cancelled", "OK", "Warning")
     }
 })
 
