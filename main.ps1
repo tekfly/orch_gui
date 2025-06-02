@@ -1,35 +1,35 @@
 Add-Type -AssemblyName PresentationFramework
 
 # Relaunch script as admin if not already
-function Ensure-Admin {
-    $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
-    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = "powershell.exe"
-        $psi.Arguments = "-ExecutionPolicy Bypass -File `"$PSCommandPath`""
-        $psi.Verb = "runas"
-        try {
-            [System.Diagnostics.Process]::Start($psi) | Out-Null
-        } catch {
-            [System.Windows.MessageBox]::Show("Admin permissions are required to run this script.", "Permission Denied", "OK", "Error")
-        }
-        exit
-    }
-}
+# function Ensure-Admin {
+#     $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+#     $principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
+#     if (-not $principal.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)) {
+#         $psi = New-Object System.Diagnostics.ProcessStartInfo
+#         $psi.FileName = "powershell.exe"
+#         $psi.Arguments = "-ExecutionPolicy Bypass -File `"$PSCommandPath`""
+#         $psi.Verb = "runas"
+#         try {
+#             [System.Diagnostics.Process]::Start($psi) | Out-Null
+#         } catch {
+#             [System.Windows.MessageBox]::Show("Admin permissions are required to run this script.", "Permission Denied", "OK", "Error")
+#         }
+#         exit
+#     }
+# }
 
 # Ensure admin rights
-Ensure-Admin
+#Ensure-Admin
 
 # Set execution policy if needed
-$currentPolicy = Get-ExecutionPolicy -Scope LocalMachine
-if ($currentPolicy -ne "RemoteSigned") {
-    try {
-        Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned -Force
-    } catch {
-        [System.Windows.MessageBox]::Show("Failed to set execution policy: `n$($_.Exception.Message)", "Policy Error", "OK", "Error")
-    }
-}
+# $currentPolicy = Get-ExecutionPolicy -Scope LocalMachine
+# if ($currentPolicy -ne "RemoteSigned") {
+#     try {
+#         Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned -Force
+#     } catch {
+#         [System.Windows.MessageBox]::Show("Failed to set execution policy: `n$($_.Exception.Message)", "Policy Error", "OK", "Error")
+#     }
+# }
 
 
 

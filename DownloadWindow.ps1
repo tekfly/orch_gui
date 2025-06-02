@@ -151,7 +151,7 @@ function Download-FileWithProgress {
     # Wait until download completes
     while (-not $downloadFinished) {
         Start-Sleep -Milliseconds 100
-        [System.Windows.Forms.Application]::DoEvents() 2>$null
+        $window.Dispatcher.Invoke([Action]{},"Background")
     }
 
     $progressBar.Visibility = 'Hidden'
