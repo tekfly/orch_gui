@@ -195,6 +195,20 @@ $downloadBtn.Add_Click({
     $product = $productBox.SelectedItem
     $version = $versionBox.SelectedItem
     $url = $jsonData.$product.$version
+    $savePath = Join-Path $downloadFolder "$product-$version.msi"
+
+    try {
+    Write-Host "Starting direct Invoke-WebRequest download..."
+    Invoke-WebRequest -Uri $url -OutFile $savePath -UseBasicParsing
+    Write-Host "Download completed successfully."
+    [System.Windows.MessageBox]::Show("Download completed.`nSaved to: $savePath", "Success", "OK", "Information")
+}
+catch {
+    Write-Host "Download error: $_"
+    [System.Windows.MessageBox]::Show("Download failed:`n$($_.Exception.Message)", "Error", "OK", "Error")
+}
+
+
 
     if (-not $url) {
         [System.Windows.MessageBox]::Show("Download URL not found for selected product/version.", "Error", "OK", "Error")
