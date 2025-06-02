@@ -17,9 +17,9 @@ if (-not (Test-Path $downloadFolder)) {
     <Grid Margin="10">
         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="350" >
             <ProgressBar Name="ProgressBar" Height="20" Minimum="0" Maximum="100" Margin="0,0,0,10"/>
-            <TextBlock Name="StatusText" Text="Starting downloads..." Margin="0,0,0,20" FontWeight="Bold" FontSize="14" TextAlignment="Center"/>
-
+            <TextBlock Name="StatusText" Text="Ready" Margin="0,0,0,20" FontWeight="Bold" FontSize="14" TextAlignment="Center"/>
             <WrapPanel HorizontalAlignment="Center" >
+                <Button Name="BtnFiles" Width="80" Margin="5" Content="UpdateFiles" IsEnabled="True"/>
                 <Button Name="BtnDownload" Width="80" Margin="5" Content="Download" IsEnabled="False"/>
                 <Button Name="BtnInstall" Width="80" Margin="5" Content="Install" IsEnabled="False"/>
                 <Button Name="BtnConnect" Width="80" Margin="5" Content="Connect" IsEnabled="False"/>
@@ -35,78 +35,65 @@ $reader = (New-Object System.Xml.XmlNodeReader $xaml)
 $window = [Windows.Markup.XamlReader]::Load($reader)
 
 # Find controls
-$statusText = $window.FindName("StatusText")
-$progressBar = $window.FindName("ProgressBar")
-$btnDownload = $window.FindName("BtnDownload")
-$btnInstall = $window.FindName("BtnInstall")
-$btnConnect = $window.FindName("BtnConnect")
-$btnUpdate = $window.FindName("BtnUpdate")
+$statusText   = $window.FindName("StatusText")
+$progressBar  = $window.FindName("ProgressBar")
+$btnFiles     = $window.FindName("BtnFiles")
+$btnDownload  = $window.FindName("BtnDownload")
+$btnInstall   = $window.FindName("BtnInstall")
+$btnConnect   = $window.FindName("BtnConnect")
+$btnUpdate    = $window.FindName("BtnUpdate")
 
-# Helper to update UI safely
-function Update-UI {
-    param([scriptblock]$action)
-    $window.Dispatcher.Invoke($action)
-}
-
-# Function to download the two files with progress
-function Download-FilesAsync {
-    $filesToDownload = @(
+function Download-Files {
+    $files = @(
         @{ Url = $productVersionsUrl; FileName = "product_versions.json" },
         @{ Url = $downloadWindowUrl; FileName = "DownloadWindow.ps1" }
     )
-    $total = $filesToDownload.Count
+    $count = $files.Count
 
-    for ($i=0; $i -lt $total; $i++) {
-        $file = $filesToDownload[$i]
+    for ($i = 0; $i -lt $count; $i++) {
+        $file = $files[$i]
         $savePath = Join-Path $downloadFolder $file.FileName
 
-        Update-UI { $statusText.Text = "Downloading $($file.FileName) ($($i+1)/$total)..." }
+        $statusText.Text = "Downloading $($file.FileName)..."
+        $progressBar.Value = [math]::Round(($i / $count) * 100)
 
         try {
             Invoke-WebRequest -Uri $file.Url -OutFile $savePath -UseBasicParsing -ErrorAction Stop
         } catch {
-            Update-UI { [System.Windows.MessageBox]::Show("Failed to download $($file.FileName):`n$($_.Exception.Message)", "Error", "OK", "Error") }
+            [System.Windows.MessageBox]::Show("Failed to download $($file.FileName):`n$($_.Exception.Message)", "Error", "OK", "Error")
+            return
         }
-
-        $percent = [int](($i+1)/$total*100)
-        Update-UI { $progressBar.Value = $percent }
     }
 
-    Update-UI {
-        $statusText.Text = "Downloads complete."
-        $btnDownload.IsEnabled = $true
-        $btnInstall.IsEnabled = $true
-        $btnConnect.IsEnabled = $true
-        $btnUpdate.IsEnabled = $true
-        $progressBar.Value = 100
-        [System.Windows.MessageBox]::Show("Files downloaded to:`n$downloadFolder", "Download Complete", "OK", "Information")
-    }
+    $progressBar.Value = 100
+    $statusText.Text = "Downloads complete."
+    $btnDownload.IsEnabled = $true
+    $btnInstall.IsEnabled = $true
+    $btnConnect.IsEnabled = $true
+    $btnUpdate.IsEnabled = $true
+    [System.Windows.MessageBox]::Show("Files downloaded to:`n$downloadFolder", "Done", "OK", "Information")
 }
 
-# Start downloads immediately on window loaded
+# Trigger download immediately when the window loads
 $window.Add_Loaded({
-    # Run download async so UI stays responsive
-    $ps = [powershell]::Create()
-    $ps.AddScript(${function:Download-FilesAsync}) | Out-Null
-    $ps.BeginInvoke()
+    Download-Files
 })
 
-# Dummy handlers for other buttons
-$btnDownload.Add_Click({
-    [System.Windows.MessageBox]::Show("Download button clicked.", "Info", "OK", "Information")
+# Re-download when clicking "UpdateFiles"
+$btnFiles.Add_Click({
+    $statusText.Text = "Updating files..."
+    $progressBar.Value = 0
+    Download-Files
 })
 
-$btnInstall.Add_Click({
-    [System.Windows.MessageBox]::Show("Install clicked - implement install logic.", "Info", "OK", "Information")
+# Placeholder buttons
+$btnDownload.Add_Click({ 
+    #[System.Windows.MessageBox]::Show("Download clicked.") 
+    .\DownloadWindow.ps1
 })
-
-$btnConnect.Add_Click({
-    [System.Windows.MessageBox]::Show("Connect clicked - implement connect logic.", "Info", "OK", "Information")
-})
-
-$btnUpdate.Add_Click({
-    [System.Windows.MessageBox]::Show("Update clicked - implement update logic.", "Info", "OK", "Information")
-})
+$btnInstall.Add_Click({ [System.Windows.MessageBox]::Show("Install clicked.") })
+$btnConnect.Add_Click({ [System.Windows.MessageBox]::Show("Connect clicked.") })
+$btnUpdate.Add_Click({ [System.Windows.MessageBox]::Show("Update clicked.") })
 
 # Show the window
 $window.ShowDialog() | Out-Null
