@@ -124,7 +124,12 @@ $btnDownload.Add_Click({
     #[System.Windows.MessageBox]::Show("Download clicked.") 
     & "$($global:downloadFolder)\DownloadWindow.ps1"
 })
-$btnInstall.Add_Click({ [System.Windows.MessageBox]::Show("Install clicked.") })
+
+$btnInstall.Add_Click({ 
+    [System.Windows.MessageBox]::Show("Install clicked.") 
+    & "$($global:downloadFolder)\Installwindow.ps1"
+})
+
 $btnConnect.Add_Click({ [System.Windows.MessageBox]::Show("Connect clicked.") })
 $btnUpdate.Add_Click({ [System.Windows.MessageBox]::Show("Update clicked.") })
 
