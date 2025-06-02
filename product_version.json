@@ -1,0 +1,17 @@
+{
+  "Orchestrator": {
+    "22.10": "https://example.com/orch_22.10.exe",
+    "23.10": "https://example.com/orch_23.10.exe",
+    "24.10": "https://example.com/orch_24.10.exe"
+  },
+  "Robot": {
+    "22.10": "https://example.com/robot_22.10.exe",
+    "23.10": "https://example.com/robot_23.10.exe",
+    "24.10": "https://example.com/robot_24.10.exe"
+  },
+  "Studio": {
+    "22.10": "https://example.com/studio_22.10.exe",
+    "23.10": "https://example.com/studio_23.10.exe",
+    "24.10": "https://example.com/studio_24.10.exe"
+  }
+}
