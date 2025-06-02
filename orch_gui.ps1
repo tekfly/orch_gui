@@ -5,135 +5,155 @@ function CheckAdmin {
     return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-# Load version data from JSON file
-$versionFile = "product_versions.json"
-if (-not (Test-Path $versionFile)) {
-    [System.Windows.Forms.MessageBox]::Show("Missing file: $versionFile", "Error", "OK", "Error")
-    exit
+# === Paths ===
+$downloadFolder = Join-Path "$env:USERPROFILE\Downloads" "UiPath_temp"
+if (-not (Test-Path $downloadFolder)) {
+    New-Item -Path $downloadFolder -ItemType Directory | Out-Null
 }
 
+$versionFile = Join-Path $downloadFolder "product_versions.json"
+$remoteJsonUrl = "https://raw.githubusercontent.com/your-username/your-repo/main/product_versions.json"
+
+function Update-VersionFile {
+    try {
+        Invoke-WebRequest -Uri $remoteJsonUrl -OutFile $versionFile -UseBasicParsing
+        Write-Host "Updated local version file from remote source." -ForegroundColor Green
+        return $true
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show("Failed to download version info from:`n$remoteJsonUrl", "Error", "OK", "Error")
+        return $false
+    }
+}
+
+# Auto-update JSON if missing or outdated
+if (-not (Test-Path $versionFile) -or ((Get-Item $versionFile).LastWriteTime -lt (Get-Date).AddDays(-1))) {
+    Write-Host "Version file missing or outdated. Downloading..."
+    $ok = Update-VersionFile
+    if (-not $ok) { exit }
+}
+
+# Load JSON
 $jsonData = Get-Content $versionFile -Raw | ConvertFrom-Json
 
-# Create Form
+# === GUI Setup ===
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "PowerShell GUI Tool"
-$form.Size = New-Object System.Drawing.Size(420, 300)
+$form.Text = "UiPath Installation Tool"
+$form.Size = New-Object System.Drawing.Size(450, 300)
 $form.StartPosition = "CenterScreen"
 
-# Label - Product
+# Product Label
 $lblProduct = New-Object System.Windows.Forms.Label
 $lblProduct.Text = "Select Product:"
 $lblProduct.Location = New-Object System.Drawing.Point(20, 20)
 $lblProduct.Size = New-Object System.Drawing.Size(100, 20)
 
-# Dropdown - Product
+# Product Dropdown
 $cmbProduct = New-Object System.Windows.Forms.ComboBox
 $cmbProduct.Location = New-Object System.Drawing.Point(130, 20)
-$cmbProduct.Size = New-Object System.Drawing.Size(250, 20)
+$cmbProduct.Size = New-Object System.Drawing.Size(280, 20)
 $cmbProduct.DropDownStyle = 'DropDownList'
 $cmbProduct.Items.AddRange(@("robot", "studio", "orchestrator"))
 
-# Label - Version
+# Version Label
 $lblVersion = New-Object System.Windows.Forms.Label
 $lblVersion.Text = "Select Version:"
 $lblVersion.Location = New-Object System.Drawing.Point(20, 60)
 $lblVersion.Size = New-Object System.Drawing.Size(100, 20)
 $lblVersion.Visible = $false
 
-# Dropdown - Version
+# Version Dropdown
 $cmbVersion = New-Object System.Windows.Forms.ComboBox
 $cmbVersion.Location = New-Object System.Drawing.Point(130, 60)
-$cmbVersion.Size = New-Object System.Drawing.Size(250, 20)
+$cmbVersion.Size = New-Object System.Drawing.Size(280, 20)
 $cmbVersion.DropDownStyle = 'DropDownList'
 $cmbVersion.Visible = $false
 
-# Label - Action
+# Action Label
 $lblAction = New-Object System.Windows.Forms.Label
 $lblAction.Text = "Select Action:"
 $lblAction.Location = New-Object System.Drawing.Point(20, 100)
 $lblAction.Size = New-Object System.Drawing.Size(100, 20)
 $lblAction.Visible = $false
 
-# Dropdown - Action
+# Action Dropdown
 $cmbAction = New-Object System.Windows.Forms.ComboBox
 $cmbAction.Location = New-Object System.Drawing.Point(130, 100)
-$cmbAction.Size = New-Object System.Drawing.Size(250, 20)
+$cmbAction.Size = New-Object System.Drawing.Size(280, 20)
 $cmbAction.DropDownStyle = 'DropDownList'
 $cmbAction.Visible = $false
 
-# Checkbox - Chrome
-$chkChrome = New-Object System.Windows.Forms.CheckBox
-$chkChrome.Text = "Include Google Chrome"
-$chkChrome.Location = New-Object System.Drawing.Point(20, 140)
-$chkChrome.Size = New-Object System.Drawing.Size(200, 20)
+# Manual Refresh Button
+$btnRefresh = New-Object System.Windows.Forms.Button
+$btnRefresh.Text = "Refresh Versions"
+$btnRefresh.Location = New-Object System.Drawing.Point(20, 140)
+$btnRefresh.Size = New-Object System.Drawing.Size(130, 30)
 
-# Button - Run Script
-$btnRun = New-Object System.Windows.Forms.Button
-$btnRun.Text = "Run Script"
-$btnRun.Location = New-Object System.Drawing.Point(150, 180)
-$btnRun.Size = New-Object System.Drawing.Size(100, 30)
+# Submit Button
+$btnSubmit = New-Object System.Windows.Forms.Button
+$btnSubmit.Text = "Submit"
+$btnSubmit.Location = New-Object System.Drawing.Point(280, 200)
+$btnSubmit.Size = New-Object System.Drawing.Size(130, 40)
 
-# Event - Product Selection
+# === Events ===
+
+# On Product Select
 $cmbProduct.Add_SelectedIndexChanged({
+    $cmbVersion.Items.Clear()
+    $cmbAction.Items.Clear()
     $selectedProduct = $cmbProduct.SelectedItem
 
-    # Populate version dropdown
-    $cmbVersion.Items.Clear()
-    if ($jsonData.$selectedProduct) {
-        $jsonData.$selectedProduct.PSObject.Properties.Name | ForEach-Object {
-            $cmbVersion.Items.Add($_)
-        }
-        $cmbVersion.SelectedIndex = 0
+    if ($selectedProduct) {
+        $versions = $jsonData.$selectedProduct.PSObject.Properties.Name
+        $cmbVersion.Items.AddRange($versions)
         $cmbVersion.Visible = $true
         $lblVersion.Visible = $true
-    }
 
-    # Populate action dropdown
-    $cmbAction.Items.Clear()
-    if ($selectedProduct -eq "orchestrator") {
-        $cmbAction.Items.AddRange(@("install", "download", "update"))
-    } else {
-        $cmbAction.Items.AddRange(@("install", "download", "connect", "update"))
+        $actions = @("install", "download", "update")
+        if ($selectedProduct -ne "orchestrator") {
+            $actions += "connect"
+        }
+        $cmbAction.Items.AddRange($actions)
+        $cmbAction.Visible = $true
+        $lblAction.Visible = $true
     }
-
-    $cmbAction.SelectedIndex = 0
-    $cmbAction.Visible = $true
-    $lblAction.Visible = $true
 })
 
-# Event - Run Button Click
-$btnRun.Add_Click({
-    if (-not (CheckAdmin)) {
-        [System.Windows.Forms.MessageBox]::Show("Please run PowerShell as Administrator.", "Error", "OK", "Error")
+# Manual Refresh
+$btnRefresh.Add_Click({
+    if (Update-VersionFile) {
+        $jsonData = Get-Content $versionFile -Raw | ConvertFrom-Json
+        [System.Windows.Forms.MessageBox]::Show("Version data refreshed.", "Info", "OK", "Information")
+    }
+})
+
+# On Submit
+$btnSubmit.Add_Click({
+    $product = $cmbProduct.SelectedItem
+    $version = $cmbVersion.SelectedItem
+    $action = $cmbAction.SelectedItem
+
+    if (-not $product -or -not $version -or -not $action) {
+        [System.Windows.Forms.MessageBox]::Show("Please select all options.", "Missing Info", "OK", "Warning")
         return
     }
 
-    $global:gproduct = $cmbProduct.SelectedItem
-    $global:version = $cmbVersion.SelectedItem
-    $global:gaction = $cmbAction.SelectedItem
-    $global:chrome = if ($chkChrome.Checked) { "yes" } else { "no" }
+    $url = $jsonData.$product.$version
+    $summary = "Product: $product`nVersion: $version`nAction: $action`nURL: $url"
+    [System.Windows.Forms.MessageBox]::Show($summary, "Selected Options", "OK", "Information")
 
-    $url = $jsonData.$global:gproduct.$global:version
-
-    # Simulate logic (replace with your real functions)
-    Write-Host "Product: $global:gproduct"
-    Write-Host "Version: $global:version"
-    Write-Host "Action: $global:gaction"
-    Write-Host "Include Chrome: $global:chrome"
-    Write-Host "Download URL: $url"
-
-    [System.Windows.Forms.MessageBox]::Show("Action: $global:gaction`nProduct: $global:gproduct`nVersion: $global:version`nURL: $url", "Confirmation", "OK", "Information")
+    # Save to file in UiPath_temp
+    $logPath = Join-Path $downloadFolder "selection_log.txt"
+    $summary | Out-File -FilePath $logPath -Encoding UTF8 -Append
 })
 
-# Add Controls to Form
-$form.Controls.Add($lblProduct)
-$form.Controls.Add($cmbProduct)
-$form.Controls.Add($lblVersion)
-$form.Controls.Add($cmbVersion)
-$form.Controls.Add($lblAction)
-$form.Controls.Add($cmbAction)
-$form.Controls.Add($chkChrome)
-$form.Controls.Add($btnRun)
+# === Add to Form ===
+$form.Controls.AddRange(@(
+    $lblProduct, $cmbProduct,
+    $lblVersion, $cmbVersion,
+    $lblAction, $cmbAction,
+    $btnSubmit, $btnRefresh
+))
 
-# Run the Form
-$form.ShowDialog()
+# === Show Form ===
+[void]$form.ShowDialog()
