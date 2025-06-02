@@ -45,12 +45,11 @@ $filesListBox.Add_SelectionChanged({
     $installBtn.IsEnabled = ($filesListBox.SelectedItems.Count -gt 0)
 })
 
-# Helper function to prompt user Studio or Robot choice
+# Prompt for Studio or Robot
 function Prompt-StudioOrRobot {
-    $msg = "Selected file looks like a Studio installer.`nPlease choose what to install:"
+    $msg = "Selected file looks like a Studio installer.`nAre you installing a Studio? (For Robot choose NO)"
     $result = [System.Windows.MessageBox]::Show($msg, "Choose Install Type", [System.Windows.MessageBoxButton]::YesNoCancel, [System.Windows.MessageBoxImage]::Question)
 
-    # Map buttons: Yes = Studio, No = Robot, Cancel = Cancel
     switch ($result) {
         'Yes' { return "Studio" }
         'No'  { return "Robot" }
@@ -58,30 +57,90 @@ function Prompt-StudioOrRobot {
     }
 }
 
+# Install Studio
+function Install-Studio {
+    param ($installerPath)
+    [System.Windows.MessageBox]::Show("Launching Studio installation from:`n$installerPath", "Studio Install", "OK", "Information")
+
+    $software = "UiPath Studio"
+    $installed = Test-Path 'HKLM:\SOFTWARE\UiPath\UiPath Studio'
+    if ($installed) {
+        Write-Host "$software is already installed." -ForegroundColor Green
+        [System.Windows.MessageBox]::Show("$software is already installed.", "Info", "OK", "Information")
+    } else {
+        Write-Host "$software is not installed. Installing now..." -ForegroundColor Yellow
+        [System.Windows.MessageBox]::Show("Starting Studio install... Please wait.", "Installing", "OK", "Information")
+
+        $robot_params = @(
+            '/i'
+            "`"$installerPath`""
+            'ADDLOCAL=DesktopFeature,Robot,RegisterService,Packages,ChromeExtension'
+            '/l*vx'
+            (Join-Path $downloadFolder 'log_studio.txt')
+            '/qn'
+        )
+
+        $exitCode = (Start-Process msiexec.exe -ArgumentList $robot_params -Wait -PassThru).ExitCode
+
+        if ($exitCode -in 0, 1641, 3010) {
+            Write-Host "Studio install completed." -ForegroundColor Green
+            [System.Windows.MessageBox]::Show("Studio installed successfully.", "Success", "OK", "Information")
+        } else {
+            Write-Host "Studio install failed. Exit code: $exitCode" -ForegroundColor Red
+            [System.Windows.MessageBox]::Show("Studio install failed.`nExit code: $exitCode", "Error", "OK", "Error")
+        }
+    }
+}
+
+# Install Robot
+function Install-Robot {
+    param ($installerPath)
+    [System.Windows.MessageBox]::Show("Launching Robot installation from:`n$installerPath", "Robot Install", "OK", "Information")
+
+    $robot_params = @(
+        '/i'
+        "`"$installerPath`""
+        'ADDLOCAL=Robot,RegisterService'
+        '/l*vx'
+        (Join-Path $downloadFolder 'log_robot.txt')
+        '/qn'
+    )
+
+    $exitCode = (Start-Process msiexec.exe -ArgumentList $robot_params -Wait -PassThru).ExitCode
+
+    if ($exitCode -in 0, 1641, 3010) {
+        Write-Host "Robot install completed." -ForegroundColor Green
+        [System.Windows.MessageBox]::Show("Robot installed successfully.", "Success", "OK", "Information")
+    } else {
+        Write-Host "Robot install failed. Exit code: $exitCode" -ForegroundColor Red
+        [System.Windows.MessageBox]::Show("Robot install failed.`nExit code: $exitCode", "Error", "OK", "Error")
+    }
+}
+
+# Install click handler
 $installBtn.Add_Click({
     foreach ($selected in $filesListBox.SelectedItems) {
         $fullPath = Join-Path $downloadFolder $selected
 
-        # If file starts with "Studio-" (case insensitive)
         if ($selected -match '^Studio-') {
             $choice = Prompt-StudioOrRobot
-            if (-not $choice) {
-                # User cancelled, skip this file
-                continue
-            }
+            if (-not $choice) { continue }
 
-            # For demonstration, show choice message, replace with your logic
-            [System.Windows.MessageBox]::Show("Installing $choice from file:`n$selected", "Info", "OK", "Information")
-            
-            # Start-Process example: you can pass arguments or handle differently
-            # Start-Process -FilePath $fullPath -ArgumentList "/installType=$choice" -Verb RunAs
-            # (Uncomment and adjust above line if your installer supports arguments)
-        } else {
-            # For other files, just launch as usual
-            try {
-                Start-Process -FilePath $fullPath -Verb RunAs
+            if ($choice -eq "Studio") {
+                Install-Studio -installerPath $fullPath
+            } elseif ($choice -eq "Robot") {
+                Install-Robot -installerPath $fullPath
             }
-            catch {
+        } else {
+            try {
+                [System.Windows.MessageBox]::Show("Installing:`n$selected", "Info", "OK", "Information")
+                $proc = Start-Process -FilePath $fullPath -Wait -PassThru
+                if ($proc.ExitCode -eq 0) {
+                    [System.Windows.MessageBox]::Show("Installation finished successfully for:`n$selected", "Success", "OK", "Information")
+                } else {
+                    [System.Windows.MessageBox]::Show("Installer finished with error code $($proc.ExitCode) for:`n$selected", "Warning", "OK", "Warning")
+                }
+            } catch {
                 [System.Windows.MessageBox]::Show("Failed to start installer:`n$selected`n$($_.Exception.Message)", "Error", "OK", "Error")
             }
         }

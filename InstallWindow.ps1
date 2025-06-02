@@ -76,7 +76,7 @@ function Install-Studio {
             "`"$installerPath`""
             'ADDLOCAL=DesktopFeature,Robot,RegisterService,Packages,ChromeExtension'
             '/l*vx'
-            'log_studio.txt'
+            (Join-Path $downloadFolder 'log_studio.txt')
             '/qn'
         )
 
@@ -102,7 +102,7 @@ function Install-Robot {
         "`"$installerPath`""
         'ADDLOCAL=Robot,RegisterService'
         '/l*vx'
-        'log_robot.txt'
+        (Join-Path $downloadFolder 'log_robot.txt')
         '/qn'
     )
 
