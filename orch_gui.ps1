@@ -21,6 +21,7 @@ $lblAction = New-Object System.Windows.Forms.Label
 $lblAction.Text = "Select Action:"
 $lblAction.Location = New-Object System.Drawing.Point(20,60)
 $lblAction.Size = New-Object System.Drawing.Size(100,20)
+$lblAction.Visible = $false
 
 # Product Dropdown
 $cmbProduct = New-Object System.Windows.Forms.ComboBox
@@ -34,6 +35,7 @@ $cmbAction = New-Object System.Windows.Forms.ComboBox
 $cmbAction.Location = New-Object System.Drawing.Point(130,60)
 $cmbAction.Size = New-Object System.Drawing.Size(200,20)
 $cmbAction.DropDownStyle = 'DropDownList'
+$cmbAction.Visible = $false
 
 # Checkbox for Chrome
 $chkChrome = New-Object System.Windows.Forms.CheckBox
@@ -47,24 +49,20 @@ $btnRun.Text = "Run Script"
 $btnRun.Location = New-Object System.Drawing.Point(130,140)
 $btnRun.Size = New-Object System.Drawing.Size(100,30)
 
-# When product is selected, update actions
+# When product is selected, show action dropdown and populate it
 $cmbProduct.Add_SelectedIndexChanged({
     $selectedProduct = $cmbProduct.SelectedItem
     $cmbAction.Items.Clear()
 
-    switch ($selectedProduct) {
-        "robot" {
-            $cmbAction.Items.AddRange(@("install", "download", "connect", "update"))
-        }
-        "studio" {
-            $cmbAction.Items.AddRange(@("install", "download", "connect", "update"))
-        }
-        "orchestrator" {
-            $cmbAction.Items.AddRange(@("install", "download", "update")) # No "connect"
-        }
+    if ($selectedProduct -eq "orchestrator") {
+        $cmbAction.Items.AddRange(@("install", "download", "update"))  # exclude 'connect'
+    } else {
+        $cmbAction.Items.AddRange(@("install", "download", "connect", "update"))
     }
 
     $cmbAction.SelectedIndex = 0
+    $cmbAction.Visible = $true
+    $lblAction.Visible = $true
 })
 
 # Run button logic
@@ -82,39 +80,7 @@ $btnRun.Add_Click({
     Write-Host "Chosen Product: $global:gproduct"
     Write-Host "Include Chrome: $global:chrome"
 
-    # === Replace below with your real logic ===
-    if ($global:gaction -eq "install") {
-        if ($global:chrome -eq "yes") {
-            download_chrome
-            install_chrome
-        }
-        if ($global:gproduct -eq "robot") {
-            down_install_tools
-            download_robot
-            install_robot
-            confirm_certificate_exist
-        }
-        elseif ($global:gproduct -eq "studio") {
-            down_install_tools
-            download_robot
-            install_studio
-            confirm_certificate_exist
-        }
-        elseif ($global:gproduct -eq "orchestrator") {
-            down_install_tools
-            download_uipath_ps
-            download_url_rewrite
-            download_dotnet
-            download_orchestrator
-            run_uipath_PS
-            install_url_rewrite
-            install_dotnet
-            confirm_certificate_exist
-            install_orchestrator
-        }
-    }
-
-    # Add similar handling for download/connect/update
+    # Insert your real logic here
 })
 
 # Add controls
