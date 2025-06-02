@@ -17,10 +17,10 @@ if (-not (Test-Path $downloadFolder)) {
     <Grid Margin="10">
         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Width="350" >
             <ProgressBar Name="ProgressBar" Height="20" Minimum="0" Maximum="100" Margin="0,0,0,10"/>
-            <TextBlock Name="StatusText" Text="Ready." Margin="0,0,0,20" FontWeight="Bold" FontSize="14" TextAlignment="Center"/>
+            <TextBlock Name="StatusText" Text="Starting downloads..." Margin="0,0,0,20" FontWeight="Bold" FontSize="14" TextAlignment="Center"/>
 
             <WrapPanel HorizontalAlignment="Center" >
-                <Button Name="BtnDownload" Width="80" Margin="5" Content="Download"/>
+                <Button Name="BtnDownload" Width="80" Margin="5" Content="Download" IsEnabled="False"/>
                 <Button Name="BtnInstall" Width="80" Margin="5" Content="Install" IsEnabled="False"/>
                 <Button Name="BtnConnect" Width="80" Margin="5" Content="Connect" IsEnabled="False"/>
                 <Button Name="BtnUpdate" Width="80" Margin="5" Content="Update" IsEnabled="False"/>
@@ -56,15 +56,6 @@ function Download-FilesAsync {
     )
     $total = $filesToDownload.Count
 
-    Update-UI {
-        $progressBar.Value = 0
-        $statusText.Text = "Starting downloads..."
-        $btnDownload.IsEnabled = $false
-        $btnInstall.IsEnabled = $false
-        $btnConnect.IsEnabled = $false
-        $btnUpdate.IsEnabled = $false
-    }
-
     for ($i=0; $i -lt $total; $i++) {
         $file = $filesToDownload[$i]
         $savePath = Join-Path $downloadFolder $file.FileName
@@ -92,15 +83,19 @@ function Download-FilesAsync {
     }
 }
 
-# Download button click event
-$btnDownload.Add_Click({
-    # Run download in background to keep UI responsive
+# Start downloads immediately on window loaded
+$window.Add_Loaded({
+    # Run download async so UI stays responsive
     $ps = [powershell]::Create()
     $ps.AddScript(${function:Download-FilesAsync}) | Out-Null
     $ps.BeginInvoke()
 })
 
 # Dummy handlers for other buttons
+$btnDownload.Add_Click({
+    [System.Windows.MessageBox]::Show("Download button clicked.", "Info", "OK", "Information")
+})
+
 $btnInstall.Add_Click({
     [System.Windows.MessageBox]::Show("Install clicked - implement install logic.", "Info", "OK", "Information")
 })
