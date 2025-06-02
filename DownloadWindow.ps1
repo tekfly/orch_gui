@@ -250,7 +250,7 @@ $downloadBtn.Add_Click({
     $cancellationTokenSource = [System.Threading.CancellationTokenSource]::new()
 
     # Run the download task asynchronously so UI stays responsive
-    $task = [System.Threading.Tasks.Task]::Run([Action]{
+    [System.Threading.Tasks.Task]::Run([Action]{
         try {
             Download-FileAsync -Url $url -Destination $savePath -CancellationToken $cancellationTokenSource.Token
             $window.Dispatcher.Invoke([Action]{
