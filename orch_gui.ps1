@@ -1,159 +1,105 @@
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName PresentationFramework
 
-function CheckAdmin {
-    return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-
-# === Paths ===
-$downloadFolder = Join-Path "$env:USERPROFILE\Downloads" "UiPath_temp"
-if (-not (Test-Path $downloadFolder)) {
-    New-Item -Path $downloadFolder -ItemType Directory | Out-Null
-}
-
+# Define paths
+$downloadFolder = Join-Path $env:USERPROFILE "Downloads\UiPath_temp"
 $versionFile = Join-Path $downloadFolder "product_versions.json"
-$remoteJsonUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
+$jsonUrl = "https://raw.githubusercontent.com/YOUR-USERNAME/YOUR-REPO/main/product_versions.json"  # Replace with real URL
 
-function Update-VersionFile {
-    try {
-        Invoke-WebRequest -Uri $remoteJsonUrl -OutFile $versionFile -UseBasicParsing
-        Write-Host "Updated local version file from remote source." -ForegroundColor Green
-        return $true
-    }
-    catch {
-        [System.Windows.Forms.MessageBox]::Show("Failed to download version info from:`n$remoteJsonUrl", "Error", "OK", "Error")
-        return $false
-    }
+# Ensure folder exists
+if (-not (Test-Path $downloadFolder)) {
+    New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null
 }
 
-# Auto-update JSON if missing or outdated
-if (-not (Test-Path $versionFile) -or ((Get-Item $versionFile).LastWriteTime -lt (Get-Date).AddDays(-1))) {
-    Write-Host "Version file missing or outdated. Downloading..."
-    $ok = Update-VersionFile
-    if (-not $ok) { exit }
+# Download JSON file if missing
+if (-not (Test-Path $versionFile)) {
+    Write-Host "Downloading JSON from GitHub..." -ForegroundColor Cyan
+    Invoke-WebRequest -Uri $jsonUrl -OutFile $versionFile -UseBasicParsing
 }
 
 # Load JSON
-$jsonData = Get-Content $versionFile -Raw | ConvertFrom-Json
+try {
+    $jsonData = Get-Content $versionFile -Raw | ConvertFrom-Json
+} catch {
+    [System.Windows.MessageBox]::Show("Failed to load or parse product_versions.json.", "Error", "OK", "Error")
+    exit
+}
 
-# === GUI Setup ===
-$form = New-Object System.Windows.Forms.Form
-$form.Text = "UiPath Installation Tool"
-$form.Size = New-Object System.Drawing.Size(450, 300)
-$form.StartPosition = "CenterScreen"
+# Extract available versions per product
+$products = @("Orchestrator", "Robot/Studio")
+$actionsByProduct = @{
+    "Orchestrator" = @("install", "download", "update")
+    "Robot/Studio" = @("install", "download", "update", "connect")
+}
 
-# Product Label
-$lblProduct = New-Object System.Windows.Forms.Label
-$lblProduct.Text = "Select Product:"
-$lblProduct.Location = New-Object System.Drawing.Point(20, 20)
-$lblProduct.Size = New-Object System.Drawing.Size(100, 20)
+# GUI XAML
+[xml]$xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        Title="UiPath Setup GUI" Height="300" Width="400">
+    <Grid Margin="10">
+        <StackPanel>
+            <TextBlock Text="Select Product:" Margin="0,0,0,5"/>
+            <ComboBox Name="ProductBox" Height="25" />
+            
+            <TextBlock Text="Select Action:" Margin="0,10,0,5"/>
+            <ComboBox Name="ActionBox" Height="25" IsEnabled="False" />
+            
+            <TextBlock Text="Select Version:" Margin="0,10,0,5"/>
+            <ComboBox Name="VersionBox" Height="25" IsEnabled="False" />
 
-# Product Dropdown
-$cmbProduct = New-Object System.Windows.Forms.ComboBox
-$cmbProduct.Location = New-Object System.Drawing.Point(130, 20)
-$cmbProduct.Size = New-Object System.Drawing.Size(280, 20)
-$cmbProduct.DropDownStyle = 'DropDownList'
-$cmbProduct.Items.AddRange(@("robot", "studio", "orchestrator"))
+            <Button Name="SubmitBtn" Content="Run" Height="30" Margin="0,20,0,0"/>
+        </StackPanel>
+    </Grid>
+</Window>
+"@
 
-# Version Label
-$lblVersion = New-Object System.Windows.Forms.Label
-$lblVersion.Text = "Select Version:"
-$lblVersion.Location = New-Object System.Drawing.Point(20, 60)
-$lblVersion.Size = New-Object System.Drawing.Size(100, 20)
-$lblVersion.Visible = $false
+# Parse XAML and find controls
+$reader = (New-Object System.Xml.XmlNodeReader $xaml)
+$window = [Windows.Markup.XamlReader]::Load($reader)
+$productBox = $window.FindName("ProductBox")
+$actionBox = $window.FindName("ActionBox")
+$versionBox = $window.FindName("VersionBox")
+$submitBtn = $window.FindName("SubmitBtn")
 
-# Version Dropdown
-$cmbVersion = New-Object System.Windows.Forms.ComboBox
-$cmbVersion.Location = New-Object System.Drawing.Point(130, 60)
-$cmbVersion.Size = New-Object System.Drawing.Size(280, 20)
-$cmbVersion.DropDownStyle = 'DropDownList'
-$cmbVersion.Visible = $false
+# Fill product dropdown
+$products | ForEach-Object { $productBox.Items.Add($_) }
 
-# Action Label
-$lblAction = New-Object System.Windows.Forms.Label
-$lblAction.Text = "Select Action:"
-$lblAction.Location = New-Object System.Drawing.Point(20, 100)
-$lblAction.Size = New-Object System.Drawing.Size(100, 20)
-$lblAction.Visible = $false
+# On Product selection
+$productBox.Add_SelectionChanged({
+    $selectedProduct = $productBox.SelectedItem.ToString()
+    
+    # Fill action dropdown based on product
+    $actionBox.Items.Clear()
+    $actionsByProduct[$selectedProduct] | ForEach-Object { $actionBox.Items.Add($_) }
+    $actionBox.IsEnabled = $true
 
-# Action Dropdown
-$cmbAction = New-Object System.Windows.Forms.ComboBox
-$cmbAction.Location = New-Object System.Drawing.Point(130, 100)
-$cmbAction.Size = New-Object System.Drawing.Size(280, 20)
-$cmbAction.DropDownStyle = 'DropDownList'
-$cmbAction.Visible = $false
-
-# Manual Refresh Button
-$btnRefresh = New-Object System.Windows.Forms.Button
-$btnRefresh.Text = "Refresh Versions"
-$btnRefresh.Location = New-Object System.Drawing.Point(20, 140)
-$btnRefresh.Size = New-Object System.Drawing.Size(130, 30)
-
-# Submit Button
-$btnSubmit = New-Object System.Windows.Forms.Button
-$btnSubmit.Text = "Submit"
-$btnSubmit.Location = New-Object System.Drawing.Point(280, 200)
-$btnSubmit.Size = New-Object System.Drawing.Size(130, 40)
-
-# === Events ===
-
-# On Product Select
-$cmbProduct.Add_SelectedIndexChanged({
-    $cmbVersion.Items.Clear()
-    $cmbAction.Items.Clear()
-    $selectedProduct = $cmbProduct.SelectedItem
-
-    if ($selectedProduct) {
-        $versions = $jsonData.$selectedProduct.PSObject.Properties.Name
-        $cmbVersion.Items.AddRange($versions)
-        $cmbVersion.Visible = $true
-        $lblVersion.Visible = $true
-
-        $actions = @("install", "download", "update")
-        if ($selectedProduct -ne "orchestrator") {
-            $actions += "connect"
-        }
-        $cmbAction.Items.AddRange($actions)
-        $cmbAction.Visible = $true
-        $lblAction.Visible = $true
-    }
+    # Fill version dropdown
+    $versionBox.Items.Clear()
+    $versions = $jsonData.$selectedProduct.PSObject.Properties.Name
+    $versions | ForEach-Object { $versionBox.Items.Add($_) }
+    $versionBox.IsEnabled = $true
 })
 
-# Manual Refresh
-$btnRefresh.Add_Click({
-    if (Update-VersionFile) {
-        $jsonData = Get-Content $versionFile -Raw | ConvertFrom-Json
-        [System.Windows.Forms.MessageBox]::Show("Version data refreshed.", "Info", "OK", "Information")
-    }
-})
+# Button click event
+$submitBtn.Add_Click({
+    $global:gproduct = $productBox.SelectedItem
+    $global:gaction = $actionBox.SelectedItem
+    $global:gversion = $versionBox.SelectedItem
 
-# On Submit
-$btnSubmit.Add_Click({
-    $product = $cmbProduct.SelectedItem
-    $version = $cmbVersion.SelectedItem
-    $action = $cmbAction.SelectedItem
-
-    if (-not $product -or -not $version -or -not $action) {
-        [System.Windows.Forms.MessageBox]::Show("Please select all options.", "Missing Info", "OK", "Warning")
+    if (-not $gproduct -or -not $gaction -or -not $gversion) {
+        [System.Windows.MessageBox]::Show("Please select all options.", "Warning", "OK", "Warning")
         return
     }
 
-    $url = $jsonData.$product.$version
-    $summary = "Product: $product`nVersion: $version`nAction: $action`nURL: $url"
-    [System.Windows.Forms.MessageBox]::Show($summary, "Selected Options", "OK", "Information")
+    $downloadUrl = $jsonData.$gproduct.$gversion
+    $savePath = Join-Path $downloadFolder "$gproduct-$gversion.exe"
 
-    # Save to file in UiPath_temp
-    $logPath = Join-Path $downloadFolder "selection_log.txt"
-    $summary | Out-File -FilePath $logPath -Encoding UTF8 -Append
+    # Download file
+    Write-Host "Downloading from: $downloadUrl" -ForegroundColor Cyan
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $savePath -UseBasicParsing
+    [System.Windows.MessageBox]::Show("File downloaded to: $savePath", "Success", "OK", "Info")
+    
+    $window.Close()
 })
 
-# === Add to Form ===
-$form.Controls.AddRange(@(
-    $lblProduct, $cmbProduct,
-    $lblVersion, $cmbVersion,
-    $lblAction, $cmbAction,
-    $btnSubmit, $btnRefresh
-))
-
-# === Show Form ===
-[void]$form.ShowDialog()
+# Run GUI
+$window.ShowDialog() | Out-Null
