@@ -1,9 +1,3 @@
-<#
-This PowerShell script provides a graphical interface to download and install UiPath components.
-It supports selecting between Orchestrator, Robot/Studio, and other components, including version and component options.
-Each installation is logged separately.
-#>
-
 Add-Type -AssemblyName PresentationFramework
 
 $downloadFolder = Join-Path $env:USERPROFILE "Downloads\UiPath_temp"
@@ -36,7 +30,6 @@ try {
     exit
 }
 
-# Function to show dialog to pick Studio or Robot
 function Show-InstallTypeDialog {
     [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -60,11 +53,9 @@ function Show-InstallTypeDialog {
     $robotBtn.Add_Click({ $result = "Robot";  $dialog.Close() })
 
     $dialog.ShowDialog() | Out-Null
-    write-output $result
     return $result
 }
 
-# Function to show component selection checkboxes based on JSON and installer type
 function Show-ComponentOptions {
     param($installerType)
 
@@ -74,11 +65,9 @@ function Show-ComponentOptions {
     }
 
     $jsonContent = Get-Content $componentsFile -Raw | ConvertFrom-Json
-
     $allComponents = $jsonContent.components
     $defaults = $jsonContent.defaults.$installerType
 
-    # Build XAML checkboxes dynamically
     $checkboxesXaml = ""
     foreach ($comp in $allComponents) {
         $isChecked = if ($defaults -contains $comp) { "IsChecked='True'" } else { "" }
@@ -130,17 +119,12 @@ function Show-ComponentOptions {
     return $selection
 }
 
-# Helper to run installer with parameters and log file
 function Install-WithParams {
     param (
         [string]$installerPath,
         [string[]]$paramsArray,
         [string]$displayName
     )
-
-    # Show a waiting message box
-    $msgBox = [System.Windows.MessageBox]::Show("Installing $displayName... Please wait.", "Installing", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
-    # The above blocks, so instead, let's use a simple window for progress:
 
     $progressXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -156,32 +140,23 @@ function Install-WithParams {
     $reader = (New-Object System.Xml.XmlNodeReader $progressXml)
     $progressWindow = [Windows.Markup.XamlReader]::Load($reader)
 
-    # Run the installer in a background job or runspaces to keep UI responsive
     $installJob = Start-Job -ScriptBlock {
         param($exe, $args)
         $proc = Start-Process -FilePath $exe -ArgumentList $args -Wait -PassThru
         return $proc.ExitCode
     } -ArgumentList $installerPath, $paramsArray
 
-    # Show the progress window
     $null = $progressWindow.Show()
-
-    # Wait for job to finish
     while ($installJob.State -eq 'Running') {
         Start-Sleep -Milliseconds 200
-        # Optionally, you could pump WPF dispatcher here, but PowerShell's dispatcher support is limited.
     }
 
     $exitCode = Receive-Job -Job $installJob
     Remove-Job $installJob
-
-    # Close progress window
     $progressWindow.Dispatcher.Invoke([action] { $progressWindow.Close() })
 
     return $exitCode
 }
-
-# Show main installer window with selectable files and filtering options
 
 [xml]$mainXaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -216,7 +191,6 @@ $chkPs1 = $mainWindow.FindName("ChkPs1")
 $filesListBox = $mainWindow.FindName("FilesListBox")
 $installBtn = $mainWindow.FindName("InstallBtn")
 
-# Function to load files from $downloadFolder based on filters
 function Load-Files {
     $filesListBox.Items.Clear()
     $filters = @()
@@ -233,10 +207,8 @@ function Load-Files {
     }
 }
 
-# Load files initially
 Load-Files
 
-# Reload on checkbox changes
 $chkMsi.Add_Checked({ Load-Files })
 $chkMsi.Add_Unchecked({ Load-Files })
 $chkExe.Add_Checked({ Load-Files })
@@ -244,7 +216,6 @@ $chkExe.Add_Unchecked({ Load-Files })
 $chkPs1.Add_Checked({ Load-Files })
 $chkPs1.Add_Unchecked({ Load-Files })
 
-# Handle Install button click - only one installation at a time
 $installBtn.Add_Click({
 
     $selectedFile = $filesListBox.SelectedItem
@@ -253,49 +224,38 @@ $installBtn.Add_Click({
         return
     }
 
-    # Ask if Studio or Robot
-    $installType = Show-InstallTypeDialog
-    if (-not $installType) { return }
+    $Global:installType = $null
 
-    # Show component selection
-    $selectedComponents = Show-ComponentOptions -installerType $installType
-    if (-not $selectedComponents -or $selectedComponents.Count -eq 0) {
-        [System.Windows.MessageBox]::Show("No components selected. Installation cancelled.", "Cancelled", "OK", "Information")
-        return
+    if ($selectedFile -match "Studio|Robot") {
+        $Global:installType = Show-InstallTypeDialog
+        if (-not $Global:installType) { return }
     }
 
-    # Construct parameters for installation depending on file type and components
+    $selectedComponents = @()
+    if ($Global:installType -eq "Studio" -or $Global:installType -eq "Robot") {
+        $selectedComponents = Show-ComponentOptions -installerType $Global:installType
+        if (-not $selectedComponents -or $selectedComponents.Count -eq 0) {
+            [System.Windows.MessageBox]::Show("No components selected. Installation cancelled.", "Cancelled", "OK", "Information")
+            return
+        }
+    }
 
     $installerFullPath = Join-Path $downloadFolder $selectedFile
     $extension = [IO.Path]::GetExtension($selectedFile).ToLower()
-
-    # Example parameter construction logic (adjust as needed)
     $installParams = @()
 
     switch ($extension) {
         ".msi" {
-            # MSI silent install params example
             $installParams = @("/i", "`"$installerFullPath`"", "/qn")
-            # You could add component-specific properties here
-            # e.g., /v"COMPONENTS=component1,component2"
-            # Assuming UiPath accepts MSI properties for components:
             if ($selectedComponents) {
                 $componentsString = $selectedComponents -join ","
                 $installParams += "/v`"COMPONENTS=$componentsString`""
             }
         }
         ".exe" {
-            # EXE silent install example (adjust switches as per UiPath installer docs)
             $installParams = @("/S")
-            # Add component switches if supported by the exe
-            # This is just a placeholder
-            foreach ($comp in $selectedComponents) {
-                # Add switches as needed per component, example:
-                # $installParams += "/$comp"
-            }
         }
         ".ps1" {
-            # PowerShell script - execute it with selected components as parameters
             $paramString = $selectedComponents -join ","
             $installParams = @("-ExecutionPolicy", "Bypass", "-File", "`"$installerFullPath`"", "-Components", "`"$paramString`"")
         }
@@ -305,7 +265,6 @@ $installBtn.Add_Click({
         }
     }
 
-    # Run installation and show progress
     $exitCode = Install-WithParams -installerPath $installerFullPath -paramsArray $installParams -displayName $selectedFile
 
     if ($exitCode -eq 0) {
@@ -315,5 +274,4 @@ $installBtn.Add_Click({
     }
 })
 
-# Show main window
 $mainWindow.ShowDialog() | Out-Null
