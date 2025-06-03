@@ -134,13 +134,30 @@ $versionBox.Add_SelectionChanged({
     $downloadBtn.IsEnabled = !!$versionBox.SelectedItem
 })
 
+function Download-File {
+    param (
+        [string]$url,
+        [string]$savePath
+    )
+
+    $psMajor = $PSVersionTable.PSVersion.Major
+
+    if ($psMajor -ge 3) {
+        # Use Invoke-WebRequest for PS 3.0 and above
+        Invoke-WebRequest -Uri $url -OutFile $savePath -UseBasicParsing
+    } else {
+        # Use BITS transfer as fallback for older PS versions
+        Start-BitsTransfer -Source $url -Destination $savePath
+    }
+}
+
 $downloadBtn.Add_Click({
     try {
         $waitingWindowXaml = @"
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        Title="Downloading" SizeToContent="WidthAndHeight" WindowStartupLocation="CenterScreen" ResizeMode="NoResize">
-    <StackPanel Margin="20">
-        <TextBlock Text="Waiting for download to end..." FontSize="14" FontWeight="Bold" HorizontalAlignment="Center"/>
+<Window xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
+        Title='Downloading' SizeToContent='WidthAndHeight' WindowStartupLocation='CenterScreen' ResizeMode='NoResize'>
+    <StackPanel Margin='20'>
+        <TextBlock Text='Waiting for download to end...' FontSize='14' FontWeight='Bold' HorizontalAlignment='Center'/>
     </StackPanel>
 </Window>
 "@
@@ -152,43 +169,62 @@ $downloadBtn.Add_Click({
         $waitingWindow.Show()
 
         # Run download async in background job
-        Start-Job -ScriptBlock {
-            param($productBox, $versionBox, $othersListBox, $jsonData, $downloadFolder)
+        $job = Start-Job -ScriptBlock {
+            param($product, $version, $selectedItems, $othersTag, $jsonData, $downloadFolder)
 
-            # Load PresentationFramework inside job (sometimes needed)
             Add-Type -AssemblyName PresentationFramework
 
-            $product = $productBox.SelectedItem
+            function Download-FileInner {
+                param ($url, $savePath)
+                $psMajor = $PSVersionTable.PSVersion.Major
+                if ($psMajor -ge 3) {
+                    Invoke-WebRequest -Uri $url -OutFile $savePath -UseBasicParsing
+                } else {
+                    Start-BitsTransfer -Source $url -Destination $savePath
+                }
+            }
+
             if ($product -eq "Others") {
-                $selectedItems = @($othersListBox.SelectedItems)
                 if (-not $selectedItems) {
                     throw "Please select at least one component from Others."
                 }
 
                 foreach ($item in $selectedItems) {
-                    $info = $othersListBox.Tag[$item]
+                    $info = $othersTag[$item]
                     $url = $info.Url
                     $filename = Split-Path $url -Leaf
                     $savePath = Join-Path $downloadFolder $filename
-                    Invoke-WebRequest -Uri $url -OutFile $savePath -UseBasicParsing
+                    Download-FileInner -url $url -savePath $savePath
                 }
             } else {
-                $version = $versionBox.SelectedItem
                 $url = $jsonData.$product.$version
                 $savePath = Join-Path $downloadFolder "${product}-$version.msi"
-                Invoke-WebRequest -Uri $url -OutFile $savePath -UseBasicParsing
+                Download-FileInner -url $url -savePath $savePath
             }
-        } -ArgumentList $productBox, $versionBox, $othersListBox, $jsonData, $downloadFolder | Wait-Job | Receive-Job
+        } -ArgumentList $productBox.SelectedItem, $versionBox.SelectedItem, @($othersListBox.SelectedItems), $othersListBox.Tag, $jsonData, $downloadFolder
+
+        # Wait for job to finish
+        $job | Wait-Job
+
+        # Check for errors
+        $jobResult = Receive-Job -Job $job -ErrorAction SilentlyContinue
+        $jobErrors = $job.ChildJobs[0].JobStateInfo.Reason
 
         # Close waiting window
         $waitingWindow.Dispatcher.Invoke([action]{
             $waitingWindow.Close()
         })
 
+        if ($jobErrors) {
+            throw $jobErrors
+        }
+
         [System.Windows.MessageBox]::Show("Download completed.", "Success", "OK", "Information")
+
+        # Remove the job
+        Remove-Job -Job $job -Force
     }
     catch {
-        # Close waiting window if open
         if ($waitingWindow -and $waitingWindow.IsVisible) {
             $waitingWindow.Dispatcher.Invoke([action]{
                 $waitingWindow.Close()
