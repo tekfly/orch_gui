@@ -46,7 +46,7 @@ $filesListBox.Add_SelectionChanged({
 })
 
 # Prompt for Studio or Robot
-function Prompt-StudioOrRobot {
+function Show-StudioOrRobotPrompt {
     $msg = "Selected file looks like a Studio installer.`nAre you installing a Studio? (For Robot choose NO)"
     $result = [System.Windows.MessageBox]::Show($msg, "Choose Install Type", [System.Windows.MessageBoxButton]::YesNoCancel, [System.Windows.MessageBoxImage]::Question)
 
@@ -123,7 +123,7 @@ $installBtn.Add_Click({
         $fullPath = Join-Path $downloadFolder $selected
 
         if ($selected -match '^Studio-') {
-            $choice = Prompt-StudioOrRobot
+            $choice = Show-StudioOrRobotPrompt
             if (-not $choice) { continue }
 
             if ($choice -eq "Studio") {
