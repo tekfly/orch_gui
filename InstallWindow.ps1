@@ -60,6 +60,7 @@ function Show-InstallTypeDialog {
     $robotBtn.Add_Click({ $result = "Robot";  $dialog.Close() })
 
     $dialog.ShowDialog() | Out-Null
+    write-output $result
     return $result
 }
 
