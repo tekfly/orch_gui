@@ -35,8 +35,8 @@ Add-Type -AssemblyName PresentationFramework
 
 # Paths and URLs
 $global:downloadFolder = Join-Path $env:USERPROFILE "Downloads\UiPath_temp"
-$productVersionsUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
-$installComponentsUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/InstallComponents.json"
+$productVersionsUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/json_files/product_versions.json"
+$installComponentsUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/json_files/InstallComponents.json"
 $downloadWindowUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/DownloadWindow.ps1"
 $installWindowUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/InstallWindow.ps1"
 
