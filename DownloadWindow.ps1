@@ -198,7 +198,8 @@ $downloadBtn.Add_Click({
                 }
             } else {
                 $url = $jsonData.$product.$version
-                $savePath = Join-Path $downloadFolder "${product}-$version.msi"
+                $productNameForFile = if ($product -like "*/*") { ($product -split '/')[1] } else { $product }
+                $savePath = Join-Path $downloadFolder "$productNameForFile-$version.msi"
                 Download-FileInner -url $url -savePath $savePath
             }
         } -ArgumentList $productBox.SelectedItem, $versionBox.SelectedItem, @($othersListBox.SelectedItems), $othersListBox.Tag, $jsonData, $downloadFolder
