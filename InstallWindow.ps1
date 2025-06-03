@@ -6,6 +6,7 @@ $jsonFolder = Join-Path $downloadFolder "json_files"
 $versionFile = Join-Path $jsonFolder "product_versions.json"
 $componentsFile = Join-Path $jsonFolder "InstallComponents.json"
 $jsonUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
+$componentsUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/InstallComponents.json"
 
 # Ensure directories exist
 if (-not (Test-Path $downloadFolder)) { New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null }
@@ -18,6 +19,15 @@ if (-not (Test-Path $versionFile)) {
         Invoke-WebRequest -Uri $jsonUrl -OutFile $versionFile -UseBasicParsing
     } catch {
         [System.Windows.MessageBox]::Show("Failed to download product_versions.json.", "Error", "OK", "Error")
+        exit
+    }
+}
+# Download InstallComponents.json if missing
+if (-not (Test-Path $componentsFile)) {
+    try {
+        Invoke-WebRequest -Uri $componentsUrl -OutFile $componentsFile -UseBasicParsing
+    } catch {
+        [System.Windows.MessageBox]::Show("Failed to download InstallComponents.json.", "Error", "OK", "Error")
         exit
     }
 }
