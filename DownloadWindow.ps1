@@ -88,8 +88,6 @@ $productBox.Add_SelectionChanged({
     }
 })
 
-#yourJson = $jsonData
-
 $actionBox.Add_SelectionChanged({
     $selectedProduct = $productBox.SelectedItem
     $selectedAction = $actionBox.SelectedItem
@@ -133,60 +131,75 @@ $actionBox.Add_SelectionChanged({
 })
 
 $versionBox.Add_SelectionChanged({
-    if ($versionBox.SelectedItem) {
-        $downloadBtn.IsEnabled = $true
-    } else {
-        $downloadBtn.IsEnabled = $false
-    }
+    $downloadBtn.IsEnabled = !!$versionBox.SelectedItem
 })
+
+function Start-DownloadWithProgress($url, $savePath) {
+    $progressBar.Visibility = 'Visible'
+    $psMajor = $PSVersionTable.PSVersion.Major
+
+    if ($psMajor -ge 7) {
+        $client = [System.Net.Http.HttpClient]::new()
+        $response = $client.GetAsync($url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
+
+        if (-not $response.IsSuccessStatusCode) {
+            throw "Failed to download: $($response.StatusCode)"
+        }
+
+        $total = $response.Content.Headers.ContentLength
+        $stream = $response.Content.ReadAsStream()
+        $file = [System.IO.File]::Create($savePath)
+        $buffer = New-Object byte[] 8192
+        $totalRead = 0
+
+        do {
+            $read = $stream.Read($buffer, 0, $buffer.Length)
+            if ($read -gt 0) {
+                $file.Write($buffer, 0, $read)
+                $totalRead += $read
+                $progress = [Math]::Round(($totalRead / $total) * 100)
+                $progressBar.Dispatcher.Invoke([action]{$progressBar.Value = $progress})
+            }
+        } while ($read -gt 0)
+
+        $file.Close()
+        $stream.Close()
+    } else {
+        Start-BitsTransfer -Source $url -Destination $savePath
+        $progressBar.Dispatcher.Invoke([action]{$progressBar.Value = 100})
+    }
+}
 
 $downloadBtn.Add_Click({
-    $product = $productBox.SelectedItem
-
-    if ($product -eq "Others") {
-        $selectedItems = @($othersListBox.SelectedItems)
-        if (-not $selectedItems) {
-            [System.Windows.MessageBox]::Show("Please select at least one component from Others.", "Warning", "OK", "Warning")
-            return
-        }
-
-        foreach ($item in $selectedItems) {
-            $info = $othersListBox.Tag[$item]
-            $url = $info.Url
-            $filename = Split-Path $url -Leaf
-            $savePath = Join-Path $downloadFolder $filename
-
-            try {
-                Write-Host "Downloading $filename..."
-                Invoke-WebRequest -Uri $url -OutFile $savePath -UseBasicParsing
-            } catch {
-                Write-Host "Error downloading $filename : $_"
-            }
-        }
-
-        [System.Windows.MessageBox]::Show("All selected items have been downloaded.", "Done", "OK", "Information")
-        return
-    }
-
-    $version = $versionBox.SelectedItem
-    $url = $jsonData.$product.$version
-    if ($product -eq "Robot/Studio") {
-        $savePath = Join-Path $downloadFolder "Studio-$version.msi"
-    } else {
-        $savePath = Join-Path $downloadFolder "$product-$version.msi"
-    }
-
     try {
-        Write-Host "Starting download..."
-        Invoke-WebRequest -Uri $url -OutFile $savePath -UseBasicParsing
-        [System.Windows.MessageBox]::Show("Download completed.`nSaved to: $savePath", "Success", "OK", "Information")
+        $product = $productBox.SelectedItem
+
+        if ($product -eq "Others") {
+            $selectedItems = @($othersListBox.SelectedItems)
+            if (-not $selectedItems) {
+                [System.Windows.MessageBox]::Show("Please select at least one component from Others.", "Warning", "OK", "Warning")
+                return
+            }
+
+            foreach ($item in $selectedItems) {
+                $info = $othersListBox.Tag[$item]
+                $url = $info.Url
+                $filename = Split-Path $url -Leaf
+                $savePath = Join-Path $downloadFolder $filename
+                Start-DownloadWithProgress -url $url -savePath $savePath
+            }
+        } else {
+            $version = $versionBox.SelectedItem
+            $url = $jsonData.$product.$version
+            $savePath = Join-Path $downloadFolder "${product}-$version.msi"
+            Start-DownloadWithProgress -url $url -savePath $savePath
+        }
+
+        [System.Windows.MessageBox]::Show("Download completed.", "Success", "OK", "Information")
     } catch {
-        [System.Windows.MessageBox]::Show("Download failed:`n$($_.Exception.Message)", "Error", "OK", "Error")
+        [System.Windows.MessageBox]::Show("Download failed: $($_.Exception.Message)", "Error", "OK", "Error")
     }
 })
 
-$cancelBtn.Add_Click({
-    $cancelBtn.IsEnabled = $false
-})
-
+$cancelBtn.Add_Click({ $cancelBtn.IsEnabled = $false })
 $window.ShowDialog() | Out-Null

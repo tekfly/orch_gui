@@ -132,8 +132,6 @@ function install-chrome{
             }
 }
     
-
-
 # Install click handler
 $installBtn.Add_Click({
     foreach ($selected in $filesListBox.SelectedItems) {
