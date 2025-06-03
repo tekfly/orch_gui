@@ -88,7 +88,7 @@ $productBox.Add_SelectionChanged({
     }
 })
 
-yourJson = $jsonData
+#yourJson = $jsonData
 
 $actionBox.Add_SelectionChanged({
     $selectedProduct = $productBox.SelectedItem

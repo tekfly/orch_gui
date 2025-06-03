@@ -117,6 +117,23 @@ function Install-Robot {
     }
 }
 
+function install-chrome{
+        $exitCode = (Start-Process -FilePath "$installerPath" -ArgumentList "/silent /install" -Verb RunAs -Wait -PassThru).ExitCode
+        # Assert the exit code and continue accordingly
+        if ($exitCode -in 0,1641,3010)
+            {
+            # success. run additional commands...
+            Write-Host "$software was installed Successfully" -ForegroundColor Green
+            }
+        else
+            {
+            # fail.
+            Write-Host "$software was NOT installed. Error, exitcode: $exitCode" -ForegroundColor Red
+            }
+}
+    
+
+
 # Install click handler
 $installBtn.Add_Click({
     foreach ($selected in $filesListBox.SelectedItems) {
