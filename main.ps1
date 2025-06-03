@@ -36,8 +36,10 @@ Add-Type -AssemblyName PresentationFramework
 # Paths and URLs
 $global:downloadFolder = Join-Path $env:USERPROFILE "Downloads\UiPath_temp"
 $productVersionsUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
+$installComponentsUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/InstallComponents.json"
 $downloadWindowUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/DownloadWindow.ps1"
 $installWindowUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/InstallWindow.ps1"
+
 
 # Ensure download folder exists
 if (-not (Test-Path $downloadFolder)) {
@@ -80,6 +82,7 @@ $btnUpdate    = $window.FindName("BtnUpdate")
 function Download-Files {
     $files = @(
         @{ Url = $productVersionsUrl; FileName = "product_versions.json" },
+        @{ Url = $installComponentsUrl; FileName = "InstallComponents.json" },
         @{ Url = $downloadWindowUrl; FileName = "DownloadWindow.ps1" },
         @{ Url = $installWindowUrl; FileName = "InstallWindow.ps1" }
     )

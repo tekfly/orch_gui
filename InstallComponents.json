@@ -1,0 +1,32 @@
+{
+  "components": [
+    "JavaBridge",
+    "ChromeExtension",
+    "FirefoxExtension",
+    "Studio",
+    "Robot",
+    "EdgeExtension",
+    "CitrixClient",
+    "JavaScriptAddOn",
+    "SapPlugin",
+    "VMwareExtension",
+    "WindowsRdpExtension",
+    "RegisterService",
+    "DesktopFeature",
+    "Packages"
+  ],
+  "defaults": {
+    "Studio": [
+      "DesktopFeature",
+      "Robot",
+      "RegisterService",
+      "Packages",
+      "ChromeExtension",
+      "EdgeExtension"
+    ],
+    "Robot": [
+      "Robot",
+      "RegisterService"
+    ]
+  }
+}
