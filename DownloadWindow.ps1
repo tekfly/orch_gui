@@ -1,7 +1,7 @@
 Add-Type -AssemblyName PresentationFramework
 
 $downloadFolder = Join-Path $env:USERPROFILE "Downloads\UiPath_temp"
-$versionFile = Join-Path $downloadFolder "product_versions.json"
+$versionFile = Join-Path $downloadFolder "json_files\product_versions.json"
 $jsonUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
 
 if (-not (Test-Path $downloadFolder)) {
@@ -134,72 +134,70 @@ $versionBox.Add_SelectionChanged({
     $downloadBtn.IsEnabled = !!$versionBox.SelectedItem
 })
 
-function Start-DownloadWithProgress($url, $savePath) {
-    $progressBar.Visibility = 'Visible'
-    $psMajor = $PSVersionTable.PSVersion.Major
-
-    if ($psMajor -ge 7) {
-        $client = [System.Net.Http.HttpClient]::new()
-        $response = $client.GetAsync($url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).Result
-
-        if (-not $response.IsSuccessStatusCode) {
-            throw "Failed to download: $($response.StatusCode)"
-        }
-
-        $total = $response.Content.Headers.ContentLength
-        $stream = $response.Content.ReadAsStream()
-        $file = [System.IO.File]::Create($savePath)
-        $buffer = New-Object byte[] 8192
-        $totalRead = 0
-
-        do {
-            $read = $stream.Read($buffer, 0, $buffer.Length)
-            if ($read -gt 0) {
-                $file.Write($buffer, 0, $read)
-                $totalRead += $read
-                $progress = [Math]::Round(($totalRead / $total) * 100)
-                $progressBar.Dispatcher.Invoke([action]{$progressBar.Value = $progress})
-            }
-        } while ($read -gt 0)
-
-        $file.Close()
-        $stream.Close()
-    } else {
-        Start-BitsTransfer -Source $url -Destination $savePath
-        $progressBar.Dispatcher.Invoke([action]{$progressBar.Value = 100})
-    }
-}
-
 $downloadBtn.Add_Click({
     try {
-        $product = $productBox.SelectedItem
+        $waitingWindowXaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        Title="Downloading" SizeToContent="WidthAndHeight" WindowStartupLocation="CenterScreen" ResizeMode="NoResize">
+    <StackPanel Margin="20">
+        <TextBlock Text="Waiting for download to end..." FontSize="14" FontWeight="Bold" HorizontalAlignment="Center"/>
+    </StackPanel>
+</Window>
+"@
 
-        if ($product -eq "Others") {
-            $selectedItems = @($othersListBox.SelectedItems)
-            if (-not $selectedItems) {
-                [System.Windows.MessageBox]::Show("Please select at least one component from Others.", "Warning", "OK", "Warning")
-                return
-            }
+        $reader = (New-Object System.Xml.XmlNodeReader ([xml]$waitingWindowXaml))
+        $waitingWindow = [Windows.Markup.XamlReader]::Load($reader)
 
-            foreach ($item in $selectedItems) {
-                $info = $othersListBox.Tag[$item]
-                $url = $info.Url
-                $filename = Split-Path $url -Leaf
-                $savePath = Join-Path $downloadFolder $filename
-                Start-DownloadWithProgress -url $url -savePath $savePath
+        # Show the waiting window non-blocking
+        $waitingWindow.Show()
+
+        # Run download async in background job
+        Start-Job -ScriptBlock {
+            param($productBox, $versionBox, $othersListBox, $jsonData, $downloadFolder)
+
+            # Load PresentationFramework inside job (sometimes needed)
+            Add-Type -AssemblyName PresentationFramework
+
+            $product = $productBox.SelectedItem
+            if ($product -eq "Others") {
+                $selectedItems = @($othersListBox.SelectedItems)
+                if (-not $selectedItems) {
+                    throw "Please select at least one component from Others."
+                }
+
+                foreach ($item in $selectedItems) {
+                    $info = $othersListBox.Tag[$item]
+                    $url = $info.Url
+                    $filename = Split-Path $url -Leaf
+                    $savePath = Join-Path $downloadFolder $filename
+                    Invoke-WebRequest -Uri $url -OutFile $savePath -UseBasicParsing
+                }
+            } else {
+                $version = $versionBox.SelectedItem
+                $url = $jsonData.$product.$version
+                $savePath = Join-Path $downloadFolder "${product}-$version.msi"
+                Invoke-WebRequest -Uri $url -OutFile $savePath -UseBasicParsing
             }
-        } else {
-            $version = $versionBox.SelectedItem
-            $url = $jsonData.$product.$version
-            $savePath = Join-Path $downloadFolder "${product}-$version.msi"
-            Start-DownloadWithProgress -url $url -savePath $savePath
-        }
+        } -ArgumentList $productBox, $versionBox, $othersListBox, $jsonData, $downloadFolder | Wait-Job | Receive-Job
+
+        # Close waiting window
+        $waitingWindow.Dispatcher.Invoke([action]{
+            $waitingWindow.Close()
+        })
 
         [System.Windows.MessageBox]::Show("Download completed.", "Success", "OK", "Information")
-    } catch {
+    }
+    catch {
+        # Close waiting window if open
+        if ($waitingWindow -and $waitingWindow.IsVisible) {
+            $waitingWindow.Dispatcher.Invoke([action]{
+                $waitingWindow.Close()
+            })
+        }
         [System.Windows.MessageBox]::Show("Download failed: $($_.Exception.Message)", "Error", "OK", "Error")
     }
 })
 
 $cancelBtn.Add_Click({ $cancelBtn.IsEnabled = $false })
+
 $window.ShowDialog() | Out-Null

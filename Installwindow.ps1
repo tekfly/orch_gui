@@ -3,7 +3,7 @@ Add-Type -AssemblyName PresentationFramework
 
 # Paths
 $downloadFolder = Join-Path $env:USERPROFILE "Downloads\UiPath_temp"
-$componentJsonPath = Join-Path $downloadFolder "install_components.json"
+$componentJsonPath = Join-Path $downloadFolder "\json_files\InstallComponents.json"
 
 # Load installer files
 $files = Get-ChildItem -Path $downloadFolder -File | Where-Object { $_.Extension -match '\.(exe|msi|ps1)$' } | Sort-Object Name
@@ -114,7 +114,7 @@ $installBtn.Add_Click({
 
             $params = @(
                 '/i',
-                "\"$fullPath\"",
+                $fullPath,
                 (Get-SelectedComponents),
                 '/l*vx',
                 (Join-Path $downloadFolder "log_$($installerType.ToLower()).txt"),
