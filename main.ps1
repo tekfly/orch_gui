@@ -88,9 +88,22 @@ function Download-Files {
     )
     $count = $files.Count
 
+    # Ensure subfolder for JSON exists
+    $jsonFolder = Join-Path $downloadFolder "json_files"
+    if (-not (Test-Path $jsonFolder)) {
+        New-Item -Path $jsonFolder -ItemType Directory -Force | Out-Null
+    }
+
     for ($i = 0; $i -lt $count; $i++) {
         $file = $files[$i]
-        $savePath = Join-Path $downloadFolder $file.FileName
+
+        # Determine file destination based on extension
+        $ext = [System.IO.Path]::GetExtension($file.FileName)
+        if ($ext -eq ".json") {
+            $savePath = Join-Path $jsonFolder $file.FileName
+        } else {
+            $savePath = Join-Path $downloadFolder $file.FileName
+        }
 
         $statusText.Text = "Downloading $($file.FileName)..."
         $progressBar.Value = [math]::Round(($i / $count) * 100)
