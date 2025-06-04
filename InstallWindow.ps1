@@ -8,6 +8,25 @@ $componentsFile = Join-Path $jsonFolder "InstallComponents.json"
 $jsonUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/product_versions.json"
 $componentsUrl = "https://raw.githubusercontent.com/tekfly/orch_gui/refs/heads/main/InstallComponents.json"
 
+function Get-AllComponents {
+    param (
+        [string]$componentsFilePath
+    )
+    if (-not (Test-Path $componentsFilePath)) {
+        Write-Error "Components file not found: $componentsFilePath"
+        return $null
+    }
+    try {
+        $jsonContent = Get-Content $componentsFilePath -Raw | ConvertFrom-Json
+        $allComponents = $jsonContent.components
+        return $allComponents
+    }
+    catch {
+        Write-Error "Failed to read or parse JSON file: $_"
+        return $null
+    }
+}
+
 # Ensure directories exist
 if (-not (Test-Path $downloadFolder)) { New-Item -Path $downloadFolder -ItemType Directory -Force | Out-Null }
 if (-not (Test-Path $logFolder)) { New-Item -Path $logFolder -ItemType Directory -Force | Out-Null }
@@ -58,12 +77,19 @@ function Show-InstallTypeDialog {
     $studioBtn = $dialog.FindName("StudioBtn")
     $robotBtn  = $dialog.FindName("RobotBtn")
 
-    $result = $null
-    $studioBtn.Add_Click({ $result = "Studio"; $dialog.Close() })
-    $robotBtn.Add_Click({ $result = "Robot";  $dialog.Close() })
+    $result = [ref] $null
+
+    $studioBtn.Add_Click({
+        $result.Value = "Studio"
+        $dialog.Close()
+    })
+    $robotBtn.Add_Click({
+        $result.Value = "Robot"
+        $dialog.Close() 
+    })
 
     $dialog.ShowDialog() | Out-Null
-    return $result
+    return $result.Value
 }
 
 function Show-ComponentOptions {
@@ -73,8 +99,8 @@ function Show-ComponentOptions {
         [System.Windows.MessageBox]::Show("InstallComponents.json not found!", "Error", "OK", "Error")
         return $null
     }
-
     $jsonContent = Get-Content $componentsFile -Raw | ConvertFrom-Json
+
     $allComponents = $jsonContent.components
     $defaults = $jsonContent.defaults.$installerType
 
@@ -101,7 +127,6 @@ function Show-ComponentOptions {
     </StackPanel>
 </Window>
 "@
-
     [xml]$xamlXml = $xaml
     $reader = (New-Object System.Xml.XmlNodeReader $xamlXml)
     $window = [Windows.Markup.XamlReader]::Load($reader)
@@ -109,14 +134,14 @@ function Show-ComponentOptions {
     $okBtn = $window.FindName("OkBtn")
     $cancelBtn = $window.FindName("CancelBtn")
 
-    $selection = $null
+    $selection = [ref] $null
 
     $okBtn.Add_Click({
-        $selection = @()
+        $selection.Value = @()
         foreach ($comp in $allComponents) {
             $chk = $window.FindName("chk$comp")
             if ($chk -and $chk.IsChecked) {
-                $selection += $comp
+                $selection.Value += $comp
             }
         }
         $window.Close()
@@ -126,7 +151,7 @@ function Show-ComponentOptions {
     })
 
     $window.ShowDialog() | Out-Null
-    return $selection
+    return $selection.Value
 }
 
 function Install-WithParams {
@@ -226,7 +251,7 @@ $chkExe.Add_Unchecked({ Load-Files })
 $chkPs1.Add_Checked({ Load-Files })
 $chkPs1.Add_Unchecked({ Load-Files })
 
-$installBtn.Add_Click({
+$installBtn.Add_Click{
 
     $selectedFile = $filesListBox.SelectedItem
     if (-not $selectedFile) {
@@ -236,12 +261,14 @@ $installBtn.Add_Click({
 
     $Global:installType = $null
 
+    # Only ask install type if the filename contains Studio or Robot
     if ($selectedFile -match "Studio|Robot") {
         $Global:installType = Show-InstallTypeDialog
         if (-not $Global:installType) { return }
     }
 
     $selectedComponents = @()
+
     if ($Global:installType -eq "Studio" -or $Global:installType -eq "Robot") {
         $selectedComponents = Show-ComponentOptions -installerType $Global:installType
         if (-not $selectedComponents -or $selectedComponents.Count -eq 0) {
@@ -251,37 +278,69 @@ $installBtn.Add_Click({
     }
 
     $installerFullPath = Join-Path $downloadFolder $selectedFile
-    $extension = [IO.Path]::GetExtension($selectedFile).ToLower()
-    $installParams = @()
+    $extension = [System.IO.Path]::GetExtension($installerFullPath).ToLower()
 
-    switch ($extension) {
-        ".msi" {
-            $installParams = @("/i", "`"$installerFullPath`"", "/qn")
-            if ($selectedComponents) {
-                $componentsString = $selectedComponents -join ","
-                $installParams += "/v`"COMPONENTS=$componentsString`""
-            }
-        }
-        ".exe" {
-            $installParams = @("/S")
-        }
-        ".ps1" {
-            $paramString = $selectedComponents -join ","
-            $installParams = @("-ExecutionPolicy", "Bypass", "-File", "`"$installerFullPath`"", "-Components", "`"$paramString`"")
-        }
-        default {
-            [System.Windows.MessageBox]::Show("Unsupported file type: $extension", "Error", "OK", "Error")
-            return
+    if ($extension -eq ".msi" -and ($Global:installType -eq "Studio" -or $Global:installType -eq "Robot")) {
+        # Construct MSI parameters for Studio/Robot with selected components
+        $componentsString = $selectedComponents -join ','
+        $logFile = Join-Path $logFolder "log_${Global:installType.ToLower()}.txt"
+
+        $msiParams = @(
+            '/i'
+            $installerFullPath
+            "/l*vx`"$logFile`""
+            '/qn'
+            "ADDLOCAL=$componentsString"
+        )
+
+        $exitCode = Install-WithParams -installerPath "msiexec.exe" -paramsArray $msiParams -displayName $Global:installType
+
+        if ($exitCode -in 0,1641,3010) {
+            [System.Windows.MessageBox]::Show("Install $Global:installType Completed Successfully.", "Success", "OK", "Information")
+        } else {
+            [System.Windows.MessageBox]::Show("Install $Global:installType FAILED with exit code $exitCode.", "Error", "OK", "Error")
         }
     }
+    elseif ($extension -eq ".msi") {
+        # Normal MSI install without components selection
+        $logFile = Join-Path $logFolder "log_install.txt"
+        $msiParams = @(
+            '/i'
+            $installerFullPath
+            "/l*vx`"$logFile`""
+            '/qn'
+        )
+        $exitCode = Install-WithParams -installerPath "msiexec.exe" -paramsArray $msiParams -displayName "MSI Installer"
 
-    $exitCode = Install-WithParams -installerPath $installerFullPath -paramsArray $installParams -displayName $selectedFile
-
-    if ($exitCode -eq 0) {
-        [System.Windows.MessageBox]::Show("Installation completed successfully.", "Success", "OK", "Information")
-    } else {
-        [System.Windows.MessageBox]::Show("Installation failed with exit code $exitCode.", "Error", "OK", "Error")
+        if ($exitCode -in 0,1641,3010) {
+            [System.Windows.MessageBox]::Show("MSI Install Completed Successfully.", "Success", "OK", "Information")
+        } else {
+            [System.Windows.MessageBox]::Show("MSI Install FAILED with exit code $exitCode.", "Error", "OK", "Error")
+        }
     }
-})
+    elseif ($extension -eq ".exe") {
+        # Execute .exe silently (example: /S for silent)
+        $exeParams = "/S"
+        $exitCode = Install-WithParams -installerPath $installerFullPath -paramsArray @($exeParams) -displayName "EXE Installer"
+        if ($exitCode -eq 0) {
+            [System.Windows.MessageBox]::Show("EXE Install Completed Successfully.", "Success", "OK", "Information")
+        } else {
+            [System.Windows.MessageBox]::Show("EXE Install FAILED with exit code $exitCode.", "Error", "OK", "Error")
+        }
+    }
+    elseif ($extension -eq ".ps1") {
+        # Run the PowerShell script
+        try {
+            & powershell.exe -ExecutionPolicy Bypass -File $installerFullPath
+            [System.Windows.MessageBox]::Show("PS1 script ran successfully.", "Success", "OK", "Information")
+        }
+        catch {
+            [System.Windows.MessageBox]::Show("Failed to run PS1 script: $_", "Error", "OK", "Error")
+        }
+    }
+    else {
+        [System.Windows.MessageBox]::Show("Unsupported file type selected.", "Error", "OK", "Error")
+    }
+}
 
 $mainWindow.ShowDialog() | Out-Null
